@@ -1,0 +1,100 @@
+import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Icon } from '../components/Icon';
+import { loadName, saveName } from '../lib/name';
+import { newRoomId, parseRoomInput } from '../lib/roomId';
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function Home() {
+  const navigate = useNavigate();
+  const [name, setName] = useState(loadName);
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+
+  const start = () => {
+    saveName(name);
+    navigate(`/room/${newRoomId()}`);
+  };
+
+  const join = (e: FormEvent) => {
+    e.preventDefault();
+    const roomId = parseRoomInput(code);
+    if (!roomId) {
+      setCodeError('That code doesn’t look right. Paste the whole link or type the code, e.g. k7d-mq3x-p9a.');
+      return;
+    }
+    saveName(name);
+    navigate(`/room/${roomId}`);
+  };
+
+  return (
+    <main className="home">
+      <header className="home__header">
+        <span className="brand">
+          <span className="brand__mark"><Icon name="video" size={20} /></span>
+          FamilyCall
+        </span>
+      </header>
+
+      <section className="home__intro">
+        <span className="eyebrow">{greeting()}</span>
+        <h1>Video call your family, free.</h1>
+        <p className="muted">Start a call, send the link or QR code, and talk face to face. No sign-up needed.</p>
+      </section>
+
+      <div className="field">
+        <label htmlFor="name">Your name</label>
+        <input
+          id="name"
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Mom, Nani, Riya"
+          autoComplete="given-name"
+          maxLength={40}
+        />
+      </div>
+
+      <section className="hero-card">
+        <div>
+          <h2>Start a video call</h2>
+          <p>You’ll get a link and QR code to share with family.</p>
+        </div>
+        <button type="button" className="btn btn--light btn--lg" onClick={start}>
+          <Icon name="video" size={22} />
+          Start video call
+        </button>
+      </section>
+
+      <form className="card join" onSubmit={join} noValidate>
+        <h2>Join a call</h2>
+        <div className="field">
+          <label htmlFor="code">Room code or invite link</label>
+          <input
+            id="code"
+            className="input"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              setCodeError(null);
+            }}
+            placeholder="k7d-mq3x-p9a"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={codeError ? true : undefined}
+            aria-describedby={codeError ? 'code-error' : undefined}
+          />
+          {codeError && <span id="code-error" className="field__error">{codeError}</span>}
+        </div>
+        <button type="submit" className="btn btn--primary btn--lg">Join</button>
+      </form>
+    </main>
+  );
+}
