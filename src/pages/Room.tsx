@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { EffectsSheet } from '../components/LazyEffectsSheet';
 import { Icon } from '../components/Icon';
 import { effectsActive } from '../effects/active';
@@ -8,7 +8,8 @@ import { VideoView } from '../components/VideoView';
 import { loadName, saveName } from '../lib/name';
 import { isValidRoomId } from '../lib/roomId';
 import { useLocalMedia } from '../lib/useLocalMedia';
-import { CallScreen } from './CallScreen';
+import { useAuth } from '../lib/auth';
+import { CallScreen, type DirectCall } from './CallScreen';
 
 export function Room() {
   const { roomId = '' } = useParams();
@@ -16,6 +17,23 @@ export function Room() {
   const [name, setName] = useState(loadName);
   const [joined, setJoined] = useState(false);
   const [showEffects, setShowEffects] = useState(false);
+  const { profile } = useAuth();
+  const [params] = useSearchParams();
+
+  // Calls placed by tapping a contact, or answered from the incoming-call screen,
+  // skip the lobby and join as soon as the camera is ready.
+  const to = params.get('to');
+  const answeredCall = params.get('answer') ? params.get('call') : null;
+  const direct: DirectCall | undefined = to
+    ? { kind: 'outgoing', to: { id: to, username: params.get('toUser') ?? '', displayName: params.get('toName') ?? 'Family member' } }
+    : answeredCall
+      ? { kind: 'incoming', callId: answeredCall }
+      : undefined;
+  const autoJoin = Boolean(direct);
+  useEffect(() => {
+    if (autoJoin && media.stream) setJoined(true);
+  }, [autoJoin, media.stream]);
+  const myName = profile?.display_name ?? (name.trim() || 'Family member');
 
   if (!isValidRoomId(roomId)) {
     return (
@@ -28,7 +46,7 @@ export function Room() {
   }
 
   if (joined && media.stream) {
-    return <CallScreen roomId={roomId} name={name.trim() || 'Family member'} media={media} onLeave={() => setJoined(false)} />;
+    return <CallScreen roomId={roomId} name={myName} media={media} direct={direct} onLeave={() => setJoined(false)} />;
   }
 
   return (

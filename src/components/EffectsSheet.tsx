@@ -116,7 +116,7 @@ export function EffectsSheet({ media, onClose }: { media: LocalMedia; onClose: (
 
           {tab === 'beauty' && (
             <div className="beauty">
-              <p className="muted">Smooths skin and brightens your face a little.</p>
+              <p className="muted">Tracks your face to smooth and brighten skin, while keeping eyes, eyebrows and lips sharp.</p>
               <div className="segmented" role="radiogroup" aria-label="Beautify level">
                 {BEAUTY_LEVELS.map(({ level, name }) => (
                   <button

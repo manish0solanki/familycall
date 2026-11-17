@@ -2,9 +2,19 @@
 
 Free video calls for families. Start a call, share the link or QR code, and talk face to face. No sign-up needed.
 
-**Status: Phase 1 — 1-to-1 video calls.** See [Roadmap](#roadmap).
+**Status: Phases 1–3: accounts, family contacts and tap-to-call, plus video effects.** See [Roadmap](#roadmap).
 
-## Features (Phase 1)
+## Features
+
+**Accounts and calling family**
+- Username + password accounts. Usernames are easy to say: first 2 letters of your first name + last name (Manish Solanki → `masolanki`), with alternatives if taken
+- Save family by username, by scanning their "My QR code", or by opening their `/add/<username>` link
+- See who's online, tap a name to ring them: full-screen incoming call with ringtone and vibration, Accept / Decline
+- Calls ring even when the app is closed (Web Push; on iPhone after "Add to Home Screen")
+- Declined / no answer / missed call handling, recent calls list, call back
+- Installable as an app (manifest + service worker)
+
+**Calling by link (no account needed)**
 
 - Start a call and get a room link + QR code to share
 - Join by tapping the link, typing the room code, or scanning the QR code with the in-app scanner (camera, or upload a photo of the code)
@@ -12,9 +22,9 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 - 1-to-1 video and voice calls, peer-to-peer and encrypted (WebRTC)
 - In-call controls: mute, camera on/off, switch front/back camera, hang up
 - Handles the other person hanging up, closing the tab or losing connection, and rejoining
-- Video effects, all processed on the device:
+- Video effects, all processed on the device (the camera picture never leaves the phone except in the call):
   - Background blur (slight or strong) and replacement with six built-in scenes or your own photo
-  - Beautify (soft skin and gentle brightening) at three levels
+  - Beautify with face tracking: smooths and brightens skin only, keeping eyes, eyebrows, lips and nose sharp (three levels)
   - Colour filters: Warm, Cool, Vivid, B&W, Vintage, Soft glow
 - Phone and desktop layouts
 
@@ -39,13 +49,26 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 
 Each room holds two people in Phase 1. See [Reliability notes](#reliability-notes) for how the call engine copes with lost or reordered messages.
 
+## Accounts, contacts and ringing
+
+| Piece | What | File |
+| --- | --- | --- |
+| Database | `profiles`, `contacts`, `calls`, `push_subscriptions` with Row Level Security | `supabase/migrations/` |
+| Server API | Edge Function: sign-up, username suggestions, add contact, register device, ring / cancel / decline / answer | `supabase/functions/family/index.ts` |
+| Sign-in | Supabase Auth with username → `<username>@users.familycall.app` (never mailed) | `src/lib/auth.tsx` |
+| Ringing | Private Realtime channel `user:<id>` per person (only they can listen; only the server sends) + Web Push | `src/lib/calls.tsx`, `public/sw.js` |
+
+**How a call rings:** tapping a contact opens a new room and calls the `ring` action. The server records the call and sends a "ring" to the callee's private channel (reaches any open app instantly) and as a Web Push (rings a closed app). Accepting joins the same room, and the normal WebRTC call connects. The Web Push signing keys are created by the server on first use and kept in a table only the server can read.
+
+Deploy the function with the Supabase CLI or dashboard; it uses its own sign-in check, so deploy it with JWT verification off (`--no-verify-jwt`), since sign-up must work before sign-in.
+
 ## Video effects
 
 `src/effects/processor.ts` draws each camera frame onto a canvas and sends `canvas.captureStream()` in the call instead of the raw camera:
 
 1. **Finding the person:** Google MediaPipe's selfie segmenter (`public/models/selfie_segmenter.tflite`) runs on the device's GPU where available. Its runtime (~3 MB compressed) is copied from `node_modules` into `public/mediapipe/` by `scripts/copy-mediapipe.mjs` before `dev`/`build`, and only downloads when someone turns on a background effect.
 2. **Background:** blurred cheaply by shrinking the frame, blurring and scaling it back up, or replaced with a scene from `public/backgrounds/` (original SVG illustrations) or the user's own photo.
-3. **Beautify:** a blurred copy of the frame is laid over at partial opacity (a soft-focus lens effect), plus slight brightening.
+3. **Beautify:** MediaPipe's face landmarker (`public/models/face_landmarker.task`, 478 points per face) gives a skin mask: face outline minus eyes, eyebrows, lips and nostrils. A blurred, brightened copy of the frame is laid over only the skin. Until face tracking loads, a light whole-picture soft focus is used.
 4. **Filters:** CSS filter strings applied while drawing.
 
 On slow devices, segmentation runs less often (at least 4 times a second) and the last outline is reused in between, so the video stays smooth. When no effect is on, the raw camera is sent untouched. Add `?debug` to the URL to log frames per second and the cost of each step.
@@ -111,6 +134,7 @@ npm run test:connect
 - `test:connect`: connects two people 50 times in a row to catch timing races.
 - `test:qr`: joining by uploading a photo of the QR code and by scanning it with the camera (feeds a video of the code to Chrome's fake camera; needs ffmpeg).
 - `test:effects`: A's camera is a portrait photo; A switches on blur, scenes, filters and beautify mid-call, and the test checks the pixels B receives. Needs ffmpeg and a Supabase build.
+- `test:calls` (`tests/direct-calls.cjs`): creates test accounts, signs in two browsers, and checks ringing, accept, hang-up, decline, cancel → missed call, sign-up and add contact.
 - `test:browsers`: calls between two completely separate browsers, so they can only meet through Supabase. Needs a build with Supabase settings.
 
 ## Reliability notes
@@ -131,8 +155,8 @@ Add `?debug` to a room URL to log every signaling message in the browser console
 | --- | --- |
 | 0 ✅ | Setup: React + Vite + TypeScript, design from the mockups |
 | 1 ✅ | 1-to-1 video calls via room link / QR code |
-| 2 | Accounts and family groups: sign-in, invites, online status |
-| 3 | Real calling: tap a family member to ring them, push notifications, call history |
+| 2 ✅ | Accounts and contacts: sign-in, usernames, add by username / QR, online status |
+| 3 ✅ | Real calling: tap a contact to ring them, push notifications, missed calls, call history |
 | 4 | Reliability: self-hosted TURN (coturn on Oracle Cloud free tier), testing on mobile data |
 | 5 | Group calls: up to 4 directly, LiveKit for more |
 | 6 | Extras: chat, screen sharing, elder mode, native apps |

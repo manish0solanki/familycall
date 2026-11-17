@@ -1,6 +1,9 @@
 import { lazy, Suspense, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { useAuth } from '../lib/auth';
+import { supabase } from '../lib/supabase';
+import { FamilyHome } from './FamilyHome';
 import { loadName, saveName } from '../lib/name';
 import { newRoomId, parseRoomInput } from '../lib/roomId';
 
@@ -20,6 +23,7 @@ export function Home() {
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const { profile } = useAuth();
 
   const start = () => {
     saveName(name);
@@ -37,6 +41,8 @@ export function Home() {
     navigate(`/room/${roomId}`);
   };
 
+  if (profile) return <FamilyHome />;
+
   return (
     <main className="home">
       <header className="home__header">
@@ -51,6 +57,19 @@ export function Home() {
         <h1>Video call your family, free.</h1>
         <p className="muted">Start a call, send the link or QR code, and talk face to face. No sign-up needed.</p>
       </section>
+
+      {supabase && (
+        <section className="card signin-card">
+          <div>
+            <h2>Let family call you directly</h2>
+            <p className="muted">Get a username, save your family, and tap a name to ring them, like WhatsApp.</p>
+          </div>
+          <div className="signin-card__actions">
+            <Link to="/login?mode=signup" className="btn btn--primary btn--lg">Create account</Link>
+            <Link to="/login" className="btn btn--secondary btn--lg">Sign in</Link>
+          </div>
+        </section>
+      )}
 
       <div className="field">
         <label htmlFor="name">Your name</label>
@@ -110,6 +129,12 @@ export function Home() {
         <QrScanner
           onClose={() => setScanning(false)}
           onResult={(text) => {
+            const add = text.match(/\/add\/([a-z0-9]+)/i);
+            if (add) {
+              setScanning(false);
+              navigate(`/add/${add[1].toLowerCase()}`);
+              return null;
+            }
             const roomId = parseRoomInput(text);
             if (!roomId) return 'That QR code isn’t a FamilyCall invite. Try the one shown on the call screen.';
             saveName(name);

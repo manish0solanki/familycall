@@ -5,16 +5,34 @@ import { Icon } from '../components/Icon';
 import { effectsActive } from '../effects/active';
 import { InvitePanel } from '../components/InvitePanel';
 import { VideoView } from '../components/VideoView';
+import { Avatar } from '../components/Avatar';
+import { useCalls, type CallParty } from '../lib/calls';
 import { PeerCall, type CallState } from '../lib/peerCall';
+import { playRingback } from '../lib/tones';
 import { signalingMode } from '../lib/signaling';
 import type { LocalMedia } from '../lib/useLocalMedia';
+
+/** A call placed by tapping a contact, or answered from the incoming-call screen. */
+export type DirectCall = { kind: 'outgoing'; to: CallParty } | { kind: 'incoming'; callId: string };
 
 interface Props {
   roomId: string;
   name: string;
   media: LocalMedia;
+  direct?: DirectCall;
   onLeave: () => void;
 }
+
+type RingState =
+  | { state: 'idle' }
+  | { state: 'ringing'; callId?: string }
+  | { state: 'answered' | 'declined' | 'noanswer'; callId?: string }
+  | { state: 'failed'; error: string };
+
+/** How long the other phone rings before we give up (matches the server). */
+const RING_TIMEOUT_MS = 45_000;
+/** An answered call whose caller never shows up (they hung up meanwhile). */
+const ANSWER_TIMEOUT_MS = 20_000;
 
 function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -39,7 +57,7 @@ const STATUS_TEXT: Record<CallState['status'], string> = {
   error: 'Something went wrong',
 };
 
-export function CallScreen({ roomId, name, media, onLeave }: Props) {
+export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
   const navigate = useNavigate();
   const callRef = useRef<PeerCall | null>(null);
   const [call, setCall] = useState<CallState>({ status: 'joining', remoteStream: null, remoteName: null });
@@ -68,10 +86,81 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
     return () => clearInterval(timer);
   }, [connected]);
 
+  // ---- Direct calls: ring the other person, and follow what happens. ----
+  const calls = useCalls();
+  const outgoingTo = direct?.kind === 'outgoing' ? direct.to : null;
+  const outgoingId = outgoingTo?.id;
+  const [ring, setRing] = useState<RingState>({ state: 'idle' });
+  const [attempt, setAttempt] = useState(0);
+  const wasConnected = useRef(false);
+  if (connected) wasConnected.current = true;
+  const ringRef = useRef(ring);
+  ringRef.current = ring;
+
+  // Ring once we're in the room (so we're ready when they pick up).
+  const inRoom = call.status !== 'joining';
+  const callsRef = useRef(calls);
+  callsRef.current = calls;
+  const rungAttempt = useRef(-1);
+  useEffect(() => {
+    const api = callsRef.current;
+    if (!outgoingId || !api || !inRoom || rungAttempt.current === attempt) return;
+    rungAttempt.current = attempt; // exactly one ring per attempt
+    setRing({ state: 'ringing' });
+    api.ring(outgoingId, roomId).then(
+      (res) => setRing((r) => (r.state === 'ringing' ? { state: 'ringing', callId: res.callId } : r)),
+      (err) => setRing({ state: 'failed', error: (err as Error).message }),
+    );
+  }, [outgoingId, inRoom, roomId, attempt]);
+
+  // Their answer / decline arrives on our private channel.
+  useEffect(() => {
+    if (!calls) return;
+    return calls.listen((event) => {
+      const current = ringRef.current;
+      if (!('callId' in current) || current.callId !== event.callId) return;
+      if (event.type === 'declined') setRing({ state: 'declined', callId: event.callId });
+      if (event.type === 'answered') setRing({ state: 'answered', callId: event.callId });
+    });
+  }, [calls]);
+
+  // No answer after 45 s.
+  const ringingCallId = ring.state === 'ringing' ? ring.callId : undefined;
+  useEffect(() => {
+    if (!ringingCallId || connected) return;
+    const timer = setTimeout(() => {
+      setRing({ state: 'noanswer', callId: ringingCallId });
+      void callsRef.current?.cancel(ringingCallId, 'timeout').catch(() => {});
+    }, RING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [ringingCallId, connected]);
+
+  // "Ring ring" while waiting for them to pick up.
+  const ringingNow = ring.state === 'ringing' && !connected && call.status === 'waiting';
+  useEffect(() => (ringingNow ? playRingback() : undefined), [ringingNow]);
+
+  // Answered a call but the caller has gone (they hung up just before).
+  const [answerExpired, setAnswerExpired] = useState(false);
+  useEffect(() => {
+    if (direct?.kind !== 'incoming' || wasConnected.current || connected) return;
+    const timer = setTimeout(() => setAnswerExpired(true), ANSWER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [direct?.kind, connected]);
+
   const hangUp = () => {
+    const current = ringRef.current;
+    if (current.state === 'ringing' && current.callId && !wasConnected.current) {
+      void callsRef.current?.cancel(current.callId).catch(() => {});
+    }
     callRef.current?.leave();
     onLeave();
     navigate('/');
+  };
+
+  const callAgain = () => {
+    wasConnected.current = false;
+    setRing({ state: 'idle' });
+    setAttempt((a) => a + 1);
   };
 
   // Effects switched on/off or camera flipped: send the new video track without redialling.
@@ -84,8 +173,30 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
   const [showEffects, setShowEffects] = useState(false);
 
   const hasRemote = Boolean(call.remoteStream) && call.status !== 'waiting';
-  const title = call.remoteName ?? 'Your call';
-  const subtitle = connected ? `${formatDuration(seconds)} · Connected` : STATUS_TEXT[call.status];
+  const otherName = outgoingTo?.displayName ?? call.remoteName;
+  const title = call.remoteName ?? otherName ?? 'Your call';
+  const ended = Boolean(direct) && call.status === 'waiting' && (wasConnected.current || answerExpired);
+  const directText =
+    ended
+      ? 'Call ended'
+      : ring.state === 'ringing'
+        ? 'Ringing…'
+        : ring.state === 'answered'
+          ? 'Connecting…'
+          : ring.state === 'declined'
+            ? 'Declined'
+            : ring.state === 'noanswer'
+              ? 'No answer'
+              : ring.state === 'failed'
+                ? 'Couldn’t ring'
+                : direct?.kind === 'incoming'
+                  ? 'Connecting…'
+                  : 'Calling…';
+  const subtitle = connected
+    ? `${formatDuration(seconds)} · Connected`
+    : direct && (call.status === 'waiting' || call.status === 'joining')
+      ? directText
+      : STATUS_TEXT[call.status];
 
   return (
     <main className="call" data-status={call.status}>
@@ -109,6 +220,34 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
             <>
               {/* Like a phone's calling screen: your own camera fills the background while you wait. */}
               <VideoView stream={media.previewStream} muted mirrored={media.facing === 'user'} className={`call__bg${media.camOn ? '' : ' is-off'}`} label="Your camera" />
+              {direct ? (
+                <div className="call__calling" data-testid="calling-panel">
+                  <Avatar name={otherName ?? '?'} seed={outgoingTo?.username || otherName || roomId} size={112} />
+                  <h2>{otherName ?? 'Family member'}</h2>
+                  <p role="status">
+                    {ended
+                      ? 'The call has ended.'
+                      : ring.state === 'declined'
+                        ? `${otherName} can’t talk right now.`
+                        : ring.state === 'noanswer'
+                          ? `${otherName} didn’t answer.`
+                          : ring.state === 'failed'
+                            ? ring.error
+                            : directText}
+                  </p>
+                  {(ended || ring.state === 'declined' || ring.state === 'noanswer' || ring.state === 'failed') && (
+                    <div className="call__calling-actions">
+                      {outgoingTo && (
+                        <button type="button" className="btn btn--light btn--lg" onClick={callAgain}>
+                          <Icon name="video" size={22} />
+                          Call again
+                        </button>
+                      )}
+                      <button type="button" className="btn btn--secondary btn--lg" onClick={hangUp}>Back home</button>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div className="call__waiting">
                 {testMode && (
                   <p className="call__warning" role="alert">
@@ -118,6 +257,7 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
                 <p>Send this link, or let them scan the QR code.</p>
                 <InvitePanel roomId={roomId} compact />
               </div>
+              )}
             </>
           )}
         </div>

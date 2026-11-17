@@ -1,5 +1,6 @@
 import type { ImageSegmenter } from '@mediapipe/tasks-vision';
-import { loadSegmenter } from './segmenter';
+import { drawSkinMask } from './faceMask';
+import { loadFaceLandmarker, loadSegmenter, type FaceTracker } from './segmenter';
 import { FILTERS, needsSegmentation, sceneUrl, type EffectSettings } from './settings';
 
 export type EffectsStatus = 'ready' | 'loading' | 'error';
@@ -11,11 +12,18 @@ const FPS = 30;
 const MAX_SEGMENT_INTERVAL_MS = 250;
 const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
+/**
+ * Beautify levels. With face tracking, skin is blurred (relative to face size) and laid
+ * over only the skin; eyes, eyebrows and lips stay sharp. `radius`/`alpha` are the
+ * fallback whole-picture soft focus used until face tracking is ready (or if it fails).
+ */
 const BEAUTY = {
-  1: { radius: 3, alpha: 0.28, brightness: 1.03 },
-  2: { radius: 4, alpha: 0.4, brightness: 1.05 },
-  3: { radius: 5, alpha: 0.52, brightness: 1.07 },
+  1: { skinBlur: 0.018, skinAlpha: 0.5, skinBrightness: 1.04, brightness: 1.02, radius: 3, alpha: 0.2 },
+  2: { skinBlur: 0.025, skinAlpha: 0.65, skinBrightness: 1.06, brightness: 1.03, radius: 4, alpha: 0.28 },
+  3: { skinBlur: 0.03, skinAlpha: 0.72, skinBrightness: 1.09, brightness: 1.04, radius: 5, alpha: 0.36 },
 } as const;
+/** A face outline older than this isn't trusted (the person moved out of frame). */
+const FACE_STALE_MS = 600;
 
 /** MediaPipe's VIDEO mode needs strictly increasing timestamps, even across processors. */
 let lastTimestamp = 0;
@@ -68,7 +76,15 @@ export class EffectsProcessor {
   /** Average time the segmenter takes on this device (ms), and when it last ran. */
   private segmentCost = 0;
   private lastSegment = 0;
-  private stats = { frames: 0, segment: 0, draw: 0, since: performance.now() };
+  /** Face tracking for Beautify. */
+  private faces: FaceTracker | null = null;
+  private facesState: 'idle' | 'loading' | 'failed' = 'idle';
+  private readonly skinMask = makeCanvas();
+  private faceWidth = 0;
+  private faceSeenAt = 0;
+  private faceCost = 0;
+  private lastFaceRun = 0;
+  private stats = { frames: 0, segment: 0, face: 0, draw: 0, since: performance.now() };
 
   constructor(source: MediaStreamTrack, settings: EffectSettings, onStatus: (status: EffectsStatus) => void) {
     this.settings = settings;
@@ -95,6 +111,19 @@ export class EffectsProcessor {
   setSettings(settings: EffectSettings) {
     this.settings = settings;
     this.loadBackgroundImage();
+    if (settings.beauty > 0 && !this.faces && this.facesState === 'idle') {
+      this.facesState = 'loading';
+      loadFaceLandmarker().then(
+        (tracker) => {
+          this.faces = tracker;
+          this.facesState = 'idle';
+        },
+        (err) => {
+          console.warn('[effects] face tracking unavailable; using simple beautify', err);
+          this.facesState = 'failed';
+        },
+      );
+    }
     if (!needsSegmentation(settings)) {
       this.onStatus('ready');
     } else if (this.segmenter) {
@@ -188,6 +217,8 @@ export class EffectsProcessor {
       }
     }
     const t1 = performance.now();
+    if (settings.beauty > 0 && this.faces) this.trackFaces(t1);
+    const t2 = performance.now();
 
     if (haveMask) {
       this.drawBackground(ctx, W, H, filter);
@@ -217,24 +248,51 @@ export class EffectsProcessor {
         ctx.filter = 'none';
       }
     }
-    if (DEBUG) this.logStats(t1 - t0, performance.now() - t1);
+    if (DEBUG) this.logStats(t1 - t0, t2 - t1, performance.now() - t2);
+  }
+
+  /** Finds faces and redraws the skin mask, as often as this device comfortably can. */
+  private trackFaces(now: number) {
+    const due = now - this.lastFaceRun >= Math.min(MAX_SEGMENT_INTERVAL_MS, this.faceCost * 1.5);
+    if (!due) return;
+    const [mask, m] = this.skinMask;
+    const [out] = this.out;
+    const mw = Math.max(2, Math.round(out.width / 2));
+    const mh = Math.max(2, Math.round(out.height / 2));
+    if (mask.width !== mw || mask.height !== mh) {
+      mask.width = mw;
+      mask.height = mh;
+    }
+    try {
+      const result = this.faces!.landmarker.detectForVideo(this.video, nextTimestamp());
+      this.faceWidth = drawSkinMask(m, result.faceLandmarks, this.faces!.parts, mw, mh);
+      if (this.faceWidth > 0) this.faceSeenAt = performance.now();
+    } catch (err) {
+      console.warn('[effects] face tracking failed', err);
+      this.faceWidth = 0;
+    }
+    const cost = performance.now() - now;
+    this.faceCost = this.faceCost ? this.faceCost * 0.8 + cost * 0.2 : cost;
+    this.lastFaceRun = performance.now();
   }
 
   /** With ?debug, logs the average cost of each step every 5 s. */
-  private logStats(segmentMs: number, drawMs: number) {
+  private logStats(segmentMs: number, faceMs: number, drawMs: number) {
     const st = this.stats;
     st.frames++;
     st.segment += segmentMs;
+    st.face += faceMs;
     st.draw += drawMs;
     const elapsed = performance.now() - st.since;
     if (elapsed < 5000) return;
+    const avg = (v: number) => (v / st.frames).toFixed(1);
     console.info(
-      `[effects] ${(st.frames / (elapsed / 1000)).toFixed(1)} fps, segment ${(st.segment / st.frames).toFixed(1)} ms, draw ${(st.draw / st.frames).toFixed(1)} ms per frame`,
+      `[effects] ${(st.frames / (elapsed / 1000)).toFixed(1)} fps, segment ${avg(st.segment)} ms, faces ${avg(st.face)} ms, draw ${avg(st.draw)} ms per frame`,
     );
-    this.stats = { frames: 0, segment: 0, draw: 0, since: performance.now() };
+    this.stats = { frames: 0, segment: 0, face: 0, draw: 0, since: performance.now() };
   }
 
-  /** Camera frame with optional soft-skin "beautify". */
+  /** Camera frame with optional "beautify". */
   private drawCamera(target: CanvasRenderingContext2D, W: number, H: number) {
     const level = this.settings.beauty;
     if (!level || !this.canFilter) {
@@ -244,6 +302,12 @@ export class EffectsProcessor {
     const cfg = BEAUTY[level];
     target.filter = `brightness(${cfg.brightness}) saturate(1.04)`;
     target.drawImage(this.video, 0, 0, W, H);
+    target.filter = 'none';
+
+    if (this.faceWidth > 0 && performance.now() - this.faceSeenAt < FACE_STALE_MS) {
+      this.drawSmoothSkin(target, W, H, cfg);
+      return;
+    }
 
     // A blurred copy, laid over at partial opacity, smooths skin like a soft-focus lens.
     // Blurring at half resolution keeps it cheap.
@@ -260,6 +324,36 @@ export class EffectsProcessor {
 
     target.filter = 'none';
     target.globalAlpha = cfg.alpha;
+    target.drawImage(soft, 0, 0, W, H);
+    target.globalAlpha = 1;
+  }
+
+  /**
+   * Face-tracked beautify: a blurred, slightly brightened copy of the frame, kept only
+   * where there is skin (face minus eyes, eyebrows and lips), laid over the sharp frame.
+   */
+  private drawSmoothSkin(target: CanvasRenderingContext2D, W: number, H: number, cfg: (typeof BEAUTY)[1 | 2 | 3]) {
+    const [mask] = this.skinMask;
+    const [soft, s] = this.softLayer;
+    const sw = mask.width;
+    const sh = mask.height;
+    if (soft.width !== sw || soft.height !== sh) {
+      soft.width = sw;
+      soft.height = sh;
+    }
+    const blur = Math.max(1, this.faceWidth * cfg.skinBlur);
+    s.globalCompositeOperation = 'source-over';
+    s.clearRect(0, 0, sw, sh);
+    s.filter = `blur(${blur.toFixed(2)}px) brightness(${cfg.skinBrightness}) saturate(1.05)`;
+    s.drawImage(this.video, 0, 0, sw, sh);
+    // Keep only skin; feather the mask so there's no visible edge.
+    s.globalCompositeOperation = 'destination-in';
+    s.filter = `blur(${Math.max(1, this.faceWidth * 0.02).toFixed(2)}px)`;
+    s.drawImage(mask, 0, 0);
+    s.filter = 'none';
+    s.globalCompositeOperation = 'source-over';
+
+    target.globalAlpha = cfg.skinAlpha;
     target.drawImage(soft, 0, 0, W, H);
     target.globalAlpha = 1;
   }
