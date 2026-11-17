@@ -30,3 +30,6 @@ dist-ssr
 
 # Test screenshots
 tests/screenshots/
+
+# Copied from node_modules at build time (scripts/copy-mediapipe.mjs)
+public/mediapipe/

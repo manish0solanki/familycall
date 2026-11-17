@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { lazy, Suspense, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
-import { QrScanner } from '../components/QrScanner';
 import { loadName, saveName } from '../lib/name';
 import { newRoomId, parseRoomInput } from '../lib/roomId';
+
+// Loaded only when someone taps "Scan QR code" (the QR decoder is fairly large).
+const QrScanner = lazy(() => import('../components/QrScanner').then((m) => ({ default: m.QrScanner })));
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -104,6 +106,7 @@ export function Home() {
       </form>
 
       {scanning && (
+        <Suspense fallback={<div className="scanner" aria-busy="true" />}>
         <QrScanner
           onClose={() => setScanning(false)}
           onResult={(text) => {
@@ -115,6 +118,7 @@ export function Home() {
             return null;
           }}
         />
+        </Suspense>
       )}
     </main>
   );

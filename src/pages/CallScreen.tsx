@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { EffectsSheet } from '../components/LazyEffectsSheet';
 import { Icon } from '../components/Icon';
+import { effectsActive } from '../effects/active';
 import { InvitePanel } from '../components/InvitePanel';
 import { VideoView } from '../components/VideoView';
 import { PeerCall, type CallState } from '../lib/peerCall';
@@ -72,10 +74,14 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
     navigate('/');
   };
 
-  const flip = async () => {
-    const track = await media.switchCamera();
-    if (track) await callRef.current?.replaceVideoTrack(track);
-  };
+  // Effects switched on/off or camera flipped: send the new video track without redialling.
+  const { videoVersion } = media;
+  useEffect(() => {
+    const track = stream.getVideoTracks()[0];
+    if (track) void callRef.current?.replaceVideoTrack(track);
+  }, [videoVersion, stream]);
+
+  const [showEffects, setShowEffects] = useState(false);
 
   const hasRemote = Boolean(call.remoteStream) && call.status !== 'waiting';
   const title = call.remoteName ?? 'Your call';
@@ -102,7 +108,7 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
           ) : (
             <>
               {/* Like a phone's calling screen: your own camera fills the background while you wait. */}
-              <VideoView stream={stream} muted mirrored={media.facing === 'user'} className={`call__bg${media.camOn ? '' : ' is-off'}`} label="Your camera" />
+              <VideoView stream={media.previewStream} muted mirrored={media.facing === 'user'} className={`call__bg${media.camOn ? '' : ' is-off'}`} label="Your camera" />
               <div className="call__waiting">
                 {testMode && (
                   <p className="call__warning" role="alert">
@@ -126,7 +132,7 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
 
       {hasRemote && (
         <div className={`call__self${media.camOn ? '' : ' is-off'}`}>
-          <VideoView stream={stream} muted mirrored={media.facing === 'user'} className="call__self-video" label="Your camera" />
+          <VideoView stream={media.previewStream} muted mirrored={media.facing === 'user'} className="call__self-video" label="Your camera" />
           {!media.camOn && <span className="call__self-off"><Icon name="videoOff" size={22} /></span>}
           <span className="call__self-label">You</span>
         </div>
@@ -152,14 +158,24 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
           <Icon name={media.camOn ? 'video' : 'videoOff'} />
         </button>
         {media.canSwitchCamera && (
-          <button type="button" className="round-btn" onClick={flip} aria-label="Switch camera">
+          <button type="button" className="round-btn" onClick={() => void media.switchCamera()} aria-label="Switch camera">
             <Icon name="flip" />
           </button>
         )}
+        <button
+          type="button"
+          className={`round-btn${effectsActive(media) ? ' is-active' : ''}`}
+          onClick={() => setShowEffects(true)}
+          aria-label="Effects: background, beautify and filters"
+        >
+          <Icon name="sparkles" />
+        </button>
         <button type="button" className="round-btn round-btn--danger" onClick={hangUp} aria-label="End call">
           <Icon name="phone" className="icon-hangup" />
         </button>
       </nav>
+
+      {showEffects && <EffectsSheet media={media} onClose={() => setShowEffects(false)} />}
     </main>
   );
 }

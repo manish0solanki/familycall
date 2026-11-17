@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.4" r="0.8">
+      <stop offset="0" stop-color="#6b2a6e"/>
+      <stop offset="1" stop-color="#2a0f33"/>
+    </radialGradient>
+    <radialGradient id="bulb" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff6d0"/>
+      <stop offset="0.35" stop-color="#ffcf5a"/>
+      <stop offset="1" stop-color="#ffcf5a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="flame" cx="0.5" cy="0.6" r="0.5">
+      <stop offset="0" stop-color="#fff8d6"/>
+      <stop offset="0.5" stop-color="#ffb02e"/>
+      <stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <!-- strings of lights -->
+  <g fill="none" stroke="#3d1c40" stroke-width="3">
+    <path d="M0 60 Q320 200 640 70 T1280 60"/>
+    <path d="M0 210 Q320 330 640 220 T1280 200"/>
+  </g>
+  <g fill="url(#bulb)">
+    <circle cx="60" cy="88" r="26"/><circle cx="160" cy="128" r="26"/><circle cx="260" cy="150" r="26"/><circle cx="360" cy="150" r="26"/>
+    <circle cx="460" cy="128" r="26"/><circle cx="560" cy="96" r="26"/><circle cx="700" cy="74" r="26"/><circle cx="800" cy="96" r="26"/>
+    <circle cx="900" cy="122" r="26"/><circle cx="1000" cy="130" r="26"/><circle cx="1100" cy="112" r="26"/><circle cx="1200" cy="84" r="26"/>
+    <circle cx="80" cy="236" r="26"/><circle cx="200" cy="268" r="26"/><circle cx="320" cy="282" r="26"/><circle cx="440" cy="270" r="26"/>
+    <circle cx="560" cy="242" r="26"/><circle cx="720" cy="222" r="26"/><circle cx="840" cy="246" r="26"/><circle cx="960" cy="262" r="26"/>
+    <circle cx="1080" cy="252" r="26"/><circle cx="1200" cy="224" r="26"/>
+  </g>
+  <!-- hanging lanterns -->
+  <g>
+    <line x1="230" y1="0" x2="230" y2="330" stroke="#c99a3a" stroke-width="3"/>
+    <path d="M200 330 H260 L272 380 Q230 420 188 380z" fill="#e2453c"/>
+    <rect x="198" y="324" width="64" height="10" rx="3" fill="#ffcf5a"/>
+    <line x1="1050" y1="0" x2="1050" y2="360" stroke="#c99a3a" stroke-width="3"/>
+    <path d="M1020 360 H1080 L1092 410 Q1050 450 1008 410z" fill="#ff9b2e"/>
+    <rect x="1018" y="354" width="64" height="10" rx="3" fill="#ffcf5a"/>
+  </g>
+  <!-- rangoli-style pattern on the floor -->
+  <ellipse cx="640" cy="690" rx="700" ry="90" fill="#1d0a24"/>
+  <g transform="translate(640 650)">
+    <circle r="70" fill="#ff7a59" opacity="0.85"/>
+    <circle r="50" fill="#ffcf5a"/>
+    <circle r="30" fill="#4fb3a9"/>
+    <circle r="12" fill="#fff"/>
+  </g>
+  <!-- diyas -->
+  <g>
+    <g transform="translate(260 640)"><ellipse cx="0" cy="-34" rx="22" ry="34" fill="url(#flame)"/><path d="M-36 0 Q0 30 36 0z" fill="#c9714f"/></g>
+    <g transform="translate(420 655)"><ellipse cx="0" cy="-34" rx="22" ry="34" fill="url(#flame)"/><path d="M-36 0 Q0 30 36 0z" fill="#c9714f"/></g>
+    <g transform="translate(860 655)"><ellipse cx="0" cy="-34" rx="22" ry="34" fill="url(#flame)"/><path d="M-36 0 Q0 30 36 0z" fill="#c9714f"/></g>
+    <g transform="translate(1020 640)"><ellipse cx="0" cy="-34" rx="22" ry="34" fill="url(#flame)"/><path d="M-36 0 Q0 30 36 0z" fill="#c9714f"/></g>
+  </g>
+</svg>

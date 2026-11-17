@@ -12,6 +12,10 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 - 1-to-1 video and voice calls, peer-to-peer and encrypted (WebRTC)
 - In-call controls: mute, camera on/off, switch front/back camera, hang up
 - Handles the other person hanging up, closing the tab or losing connection, and rejoining
+- Video effects, all processed on the device:
+  - Background blur (slight or strong) and replacement with six built-in scenes or your own photo
+  - Beautify (soft skin and gentle brightening) at three levels
+  - Colour filters: Warm, Cool, Vivid, B&W, Vintage, Soft glow
 - Phone and desktop layouts
 
 ## How it works
@@ -30,9 +34,21 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 | Signaling | Supabase Realtime broadcast; falls back to `BroadcastChannel` (same browser only) when Supabase isn't configured | `src/lib/signaling.ts` |
 | STUN / TURN | Google public STUN; optional TURN from env | `src/lib/iceServers.ts` |
 | Camera + mic | `getUserMedia`, toggles, camera switching | `src/lib/useLocalMedia.ts` |
+| Effects | MediaPipe selfie segmentation + canvas compositing → processed video track | `src/effects/` |
 | Screens | Home, pre-join lobby, in-call | `src/pages/` |
 
 Each room holds two people in Phase 1. See [Reliability notes](#reliability-notes) for how the call engine copes with lost or reordered messages.
+
+## Video effects
+
+`src/effects/processor.ts` draws each camera frame onto a canvas and sends `canvas.captureStream()` in the call instead of the raw camera:
+
+1. **Finding the person:** Google MediaPipe's selfie segmenter (`public/models/selfie_segmenter.tflite`) runs on the device's GPU where available. Its runtime (~3 MB compressed) is copied from `node_modules` into `public/mediapipe/` by `scripts/copy-mediapipe.mjs` before `dev`/`build`, and only downloads when someone turns on a background effect.
+2. **Background:** blurred cheaply by shrinking the frame, blurring and scaling it back up, or replaced with a scene from `public/backgrounds/` (original SVG illustrations) or the user's own photo.
+3. **Beautify:** a blurred copy of the frame is laid over at partial opacity (a soft-focus lens effect), plus slight brightening.
+4. **Filters:** CSS filter strings applied while drawing.
+
+On slow devices, segmentation runs less often (at least 4 times a second) and the last outline is reused in between, so the video stays smooth. When no effect is on, the raw camera is sent untouched. Add `?debug` to the URL to log frames per second and the cost of each step.
 
 ## Run locally
 
@@ -94,6 +110,7 @@ npm run test:connect
 - `test:e2e`: start → join → connected both ways with audio and video → mute/camera toggles → a third person is told the room is full → hang up → rejoin → closing the tab → desktop layout → bad room codes. Screenshots go to `tests/screenshots/`.
 - `test:connect`: connects two people 50 times in a row to catch timing races.
 - `test:qr`: joining by uploading a photo of the QR code and by scanning it with the camera (feeds a video of the code to Chrome's fake camera; needs ffmpeg).
+- `test:effects`: A's camera is a portrait photo; A switches on blur, scenes, filters and beautify mid-call, and the test checks the pixels B receives. Needs ffmpeg and a Supabase build.
 - `test:browsers`: calls between two completely separate browsers, so they can only meet through Supabase. Needs a build with Supabase settings.
 
 ## Reliability notes

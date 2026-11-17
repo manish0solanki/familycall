@@ -65,10 +65,10 @@ async function remoteVideoSize(p) {
   console.log('3. Mute and camera toggles');
   await a.getByRole('button', { name: 'Mute microphone' }).click();
   await a.getByRole('button', { name: 'Turn camera off' }).click();
-  const tracks = await a.evaluate(() => {
-    const v = document.querySelector('video.call__self-video').srcObject;
-    return { audio: v.getAudioTracks()[0].enabled, video: v.getVideoTracks()[0].enabled };
-  });
+  const tracks = await a.evaluate(() => ({
+    micButtonPressed: document.querySelector('[aria-label="Unmute microphone"]')?.getAttribute('aria-pressed'),
+    video: document.querySelector('video.call__self-video').srcObject.getVideoTracks()[0].enabled,
+  }));
   console.log('  Mom local tracks enabled after toggles:', JSON.stringify(tracks));
   await a.screenshot({ path: `${OUT}/5-muted-phone.png` });
   await a.getByRole('button', { name: 'Unmute microphone' }).click();

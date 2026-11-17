@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { EffectsSheet } from '../components/LazyEffectsSheet';
 import { Icon } from '../components/Icon';
+import { effectsActive } from '../effects/active';
 import { InvitePanel } from '../components/InvitePanel';
 import { VideoView } from '../components/VideoView';
 import { loadName, saveName } from '../lib/name';
@@ -13,6 +15,7 @@ export function Room() {
   const media = useLocalMedia();
   const [name, setName] = useState(loadName);
   const [joined, setJoined] = useState(false);
+  const [showEffects, setShowEffects] = useState(false);
 
   if (!isValidRoomId(roomId)) {
     return (
@@ -42,7 +45,7 @@ export function Room() {
             ) : !media.camOn ? (
               <div className="preview__message">Camera is off</div>
             ) : null}
-            <VideoView stream={media.stream} muted mirrored={media.facing === 'user'} className="preview__video" label="Your camera preview" />
+            <VideoView stream={media.previewStream} muted mirrored={media.facing === 'user'} className="preview__video" label="Your camera preview" />
           </div>
           <div className="lobby__toggles">
             <button
@@ -65,8 +68,18 @@ export function Room() {
             >
               <Icon name={media.camOn ? 'video' : 'videoOff'} />
             </button>
+            <button
+              type="button"
+              className={`round-btn round-btn--light${effectsActive(media) ? ' is-active' : ''}`}
+              onClick={() => setShowEffects(true)}
+              aria-label="Effects: background, beautify and filters"
+              disabled={!media.stream}
+            >
+              <Icon name="sparkles" />
+            </button>
           </div>
         </section>
+        {showEffects && <EffectsSheet media={media} onClose={() => setShowEffects(false)} />}
 
         <section className="lobby__side">
           <h1>Ready to join?</h1>
