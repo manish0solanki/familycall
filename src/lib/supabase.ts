@@ -52,6 +52,8 @@ export interface Profile {
   username: string;
   display_name: string;
   last_seen?: string | null;
+  /** When the account last saved a recovery code (only visible on your own profile). */
+  recovery_set_at?: string | null;
 }
 
 /** "Online" if the app was open in the last 2 minutes (it checks in every minute). */

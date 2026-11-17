@@ -13,6 +13,8 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 - Calls ring even when the app is closed (Web Push; on iPhone after "Add to Home Screen")
 - Declined / no answer / missed call handling, recent calls list, call back
 - Installable as an app (manifest + service worker)
+- Forgotten passwords: each account gets a recovery code (`XXXX-XXXX-XXXX-XXXX`) at sign-up; "Forgot password?" sets a new password with it. Codes work once (a new one is issued), are stored only as a salted PBKDF2 hash, and 5 wrong tries lock the account for 15 minutes. Change password and make a new code under Settings
+- Ringtones: Marimba, Morning chimes, Harp, Classic phone (original melodies synthesised with Web Audio; chosen in Settings)
 
 **Calling by link (no account needed)**
 
@@ -54,7 +56,7 @@ Each room holds two people in Phase 1. See [Reliability notes](#reliability-note
 | Piece | What | File |
 | --- | --- | --- |
 | Database | `profiles`, `contacts`, `calls`, `push_subscriptions` with Row Level Security | `supabase/migrations/` |
-| Server API | Edge Function: sign-up, username suggestions, add contact, register device, ring / cancel / decline / answer | `supabase/functions/family/index.ts` |
+| Server API | Edge Function: sign-up, username suggestions, recovery codes, password reset / change, add contact, register device, ring / cancel / decline / answer | `supabase/functions/family/index.ts` |
 | Sign-in | Supabase Auth with username → `<username>@users.familycall.app` (never mailed) | `src/lib/auth.tsx` |
 | Ringing | Private Realtime channel `user:<id>` per person (only they can listen; only the server sends) + Web Push | `src/lib/calls.tsx`, `public/sw.js` |
 
@@ -134,6 +136,7 @@ npm run test:connect
 - `test:connect`: connects two people 50 times in a row to catch timing races.
 - `test:qr`: joining by uploading a photo of the QR code and by scanning it with the camera (feeds a video of the code to Chrome's fake camera; needs ffmpeg).
 - `test:effects`: A's camera is a portrait photo; A switches on blur, scenes, filters and beautify mid-call, and the test checks the pixels B receives. Needs ffmpeg and a Supabase build.
+- `test:reset` (`tests/password-reset.cjs`): sign-up recovery code, forgot password with a wrong and a right code, old vs new password, change password, ringtone choice.
 - `test:calls` (`tests/direct-calls.cjs`): creates test accounts, signs in two browsers, and checks ringing, accept, hang-up, decline, cancel → missed call, sign-up and add contact.
 - `test:browsers`: calls between two completely separate browsers, so they can only meet through Supabase. Needs a build with Supabase settings.
 

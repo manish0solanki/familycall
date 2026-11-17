@@ -25,6 +25,16 @@ const admin: SupabaseClient = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+const PUBLISHABLE_KEY = (() => {
+  try {
+    const keys = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}');
+    if (keys.default) return keys.default as string;
+  } catch {
+    // fall through to the legacy key
+  }
+  return Deno.env.get('SUPABASE_ANON_KEY')!;
+})();
+
 /** Accounts use usernames; Supabase Auth needs an email, so we derive one that is never mailed. */
 export const LOGIN_EMAIL_DOMAIN = 'users.familycall.app';
 const USERNAME = /^[a-z]{3,20}[0-9]{0,3}$/;
@@ -79,6 +89,8 @@ Deno.serve(async (req) => {
         return json(await signup(body));
       case 'vapidPublicKey':
         return json({ publicKey: (await vapidKeys()).publicKey });
+      case 'resetPassword':
+        return json(await resetPassword(body));
     }
 
     const me = await requireUser(req);
@@ -95,6 +107,10 @@ Deno.serve(async (req) => {
         return json(await endRinging(me, body, 'decline'));
       case 'answer':
         return json(await endRinging(me, body, 'answer'));
+      case 'createRecoveryCode':
+        return json({ recoveryCode: await setRecoveryCode(me) });
+      case 'changePassword':
+        return json(await changePassword(me, body));
       default:
         return json({ error: 'Unknown action' }, 400);
     }
@@ -195,7 +211,129 @@ async function signup(body: Record<string, unknown>) {
     if (profileError.code === '23505') throw new HttpError(409, 'That username is taken. Try another one.');
     throw profileError;
   }
-  return { username, displayName };
+  const recoveryCode = await setRecoveryCode(created.user.id);
+  return { username, displayName, recoveryCode };
+}
+
+// ---------------------------------------------------------------------------
+// Passwords and recovery codes (accounts have no email, so a saved code is the
+// way back in). Only a salted PBKDF2 hash of the code is stored.
+
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
+
+function newRecoveryCode(): string {
+  const out: string[] = [];
+  while (out.length < 16) {
+    const [b] = crypto.getRandomValues(new Uint8Array(1));
+    if (b < 248) out.push(CODE_ALPHABET[b % 31]); // 248 = 8 × 31, so no bias
+  }
+  return out.join('').match(/.{4}/g)!.join('-');
+}
+
+const normalizeCode = (code: string) => code.toUpperCase().replace(/[^0-9A-Z]/g, '');
+const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const fromBase64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+async function hashCode(code: string, salt: Uint8Array<ArrayBuffer>): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(normalizeCode(code)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' }, key, 256);
+  return toBase64(new Uint8Array(bits));
+}
+
+function sameString(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Creates (or replaces) the account's recovery code and returns it. It's shown to the person once. */
+async function setRecoveryCode(userId: string): Promise<string> {
+  const code = newRecoveryCode();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const now = new Date().toISOString();
+  const { error } = await admin.from('account_recovery').upsert({
+    user_id: userId,
+    code_hash: await hashCode(code, salt),
+    salt: toBase64(salt),
+    failed_attempts: 0,
+    locked_until: null,
+    created_at: now,
+  });
+  if (error) throw error;
+  const { error: profileError } = await admin.from('profiles').update({ recovery_set_at: now }).eq('id', userId);
+  if (profileError) throw profileError;
+  return code;
+}
+
+function checkPassword(password: unknown): string {
+  if (typeof password !== 'string' || password.length < 6 || password.length > 72) {
+    throw new HttpError(400, 'Password must be at least 6 characters.');
+  }
+  return password;
+}
+
+/** Forgot password: username + recovery code → new password. Returns a fresh code (each code works once). */
+async function resetPassword(body: Record<string, unknown>) {
+  const username = str(body.username, 'username', 23).toLowerCase();
+  const code = str(body.code, 'recovery code', 40);
+  const password = checkPassword(body.password);
+
+  const { data: account, error } = await admin.from('profiles').select('id').eq('username', username).maybeSingle();
+  if (error) throw error;
+  if (!account) throw new HttpError(404, `No account has the username “${username}”.`);
+
+  const { data: recovery, error: recoveryError } = await admin
+    .from('account_recovery')
+    .select('code_hash, salt, failed_attempts, locked_until')
+    .eq('user_id', account.id)
+    .maybeSingle();
+  if (recoveryError) throw recoveryError;
+  if (!recovery) throw new HttpError(400, 'This account has no recovery code saved, so its password can’t be reset.');
+
+  if (recovery.locked_until && new Date(recovery.locked_until).getTime() > Date.now()) {
+    const minutes = Math.ceil((new Date(recovery.locked_until).getTime() - Date.now()) / 60_000);
+    throw new HttpError(429, `Too many wrong codes. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+  }
+
+  const hash = await hashCode(code, fromBase64(recovery.salt));
+  if (!sameString(hash, recovery.code_hash)) {
+    const failed = recovery.failed_attempts + 1;
+    const lock = failed >= MAX_FAILED_ATTEMPTS;
+    await admin
+      .from('account_recovery')
+      .update({
+        failed_attempts: lock ? 0 : failed,
+        locked_until: lock ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null,
+      })
+      .eq('user_id', account.id);
+    throw new HttpError(
+      401,
+      lock
+        ? `That recovery code isn’t right. Too many tries, so wait ${LOCK_MINUTES} minutes before trying again.`
+        : `That recovery code isn’t right. ${MAX_FAILED_ATTEMPTS - failed} ${MAX_FAILED_ATTEMPTS - failed === 1 ? 'try' : 'tries'} left.`,
+    );
+  }
+
+  const { error: updateError } = await admin.auth.admin.updateUserById(account.id, { password });
+  if (updateError) throw updateError;
+  return { recoveryCode: await setRecoveryCode(account.id) };
+}
+
+/** Signed in: change password after confirming the current one. */
+async function changePassword(me: string, body: Record<string, unknown>) {
+  const current = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+  const password = checkPassword(body.password);
+  const { data: account } = await admin.from('profiles').select('username').eq('id', me).single();
+  const checker = createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { error: wrong } = await checker.auth.signInWithPassword({ email: `${account!.username}@${LOGIN_EMAIL_DOMAIN}`, password: current });
+  if (wrong) throw new HttpError(401, 'Your current password isn’t right.');
+  await checker.auth.signOut({ scope: 'local' }); // only this check's session, not the person's own
+  const { error } = await admin.auth.admin.updateUserById(me, { password });
+  if (error) throw error;
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { RecoveryCodeCard } from '../components/RecoveryCodeCard';
 import { useAuth } from '../lib/auth';
 import { api, USERNAME_PATTERN } from '../lib/supabase';
 
-type Mode = 'signin' | 'signup';
+type Mode = 'signin' | 'signup' | 'reset';
 type Check = { state: 'idle' | 'checking' | 'ok' | 'bad'; message?: string };
 
 export function Login() {
-  const { signIn, signUp, profile } = useAuth();
+  const { signIn, signUp, resetPassword, profile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const next = new URLSearchParams(location.search).get('next') || '/';
@@ -22,10 +23,14 @@ export function Login() {
   const [check, setCheck] = useState<Check>({ state: 'idle' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState('');
+  /** A recovery code to show (after sign-up, or after resetting a password). */
+  const [recovery, setRecovery] = useState<{ code: string; reset: boolean } | null>(null);
+  const holdNavigation = useRef(false);
   const checkSeq = useRef(0);
 
   useEffect(() => {
-    if (profile) navigate(next, { replace: true });
+    if (profile && !holdNavigation.current) navigate(next, { replace: true });
   }, [profile, next, navigate]);
 
   // Suggest a username from the name (e.g. Manish Solanki → masolanki), or check the typed one.
@@ -68,15 +73,43 @@ export function Login() {
     try {
       if (mode === 'signin') {
         await signIn(username, password);
-      } else {
+      } else if (mode === 'signup') {
         if (password.length < 6) throw new Error('Choose a password with at least 6 characters.');
-        await signUp({ firstName: firstName.trim(), lastName: lastName.trim(), username, password });
+        holdNavigation.current = true; // show the recovery code first
+        const recoveryCode = await signUp({ firstName: firstName.trim(), lastName: lastName.trim(), username, password });
+        setRecovery({ code: recoveryCode, reset: false });
+      } else {
+        if (password.length < 6) throw new Error('Choose a new password with at least 6 characters.');
+        holdNavigation.current = true;
+        const recoveryCode = await resetPassword(username, code, password);
+        setRecovery({ code: recoveryCode, reset: true });
       }
+      setBusy(false);
     } catch (err) {
+      holdNavigation.current = false;
       setError((err as Error).message);
       setBusy(false);
     }
   };
+
+  if (recovery) {
+    return (
+      <main className="auth">
+        {recovery.reset && (
+          <p className="banner banner--ok" role="status">Your password has been changed. Your old recovery code no longer works; here’s your new one.</p>
+        )}
+        <RecoveryCodeCard
+          code={recovery.code}
+          username={username}
+          doneLabel={recovery.reset ? 'Continue to my family' : 'Continue'}
+          onDone={() => {
+            holdNavigation.current = false;
+            navigate(next, { replace: true });
+          }}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="auth">
@@ -87,7 +120,7 @@ export function Login() {
       </span>
 
       <div className="tabs" role="tablist" aria-label="Account">
-        <button type="button" role="tab" aria-selected={mode === 'signin'} className={`tabs__tab${mode === 'signin' ? ' is-active' : ''}`} onClick={() => { setMode('signin'); setError(null); }}>
+        <button type="button" role="tab" aria-selected={mode !== 'signup'} className={`tabs__tab${mode !== 'signup' ? ' is-active' : ''}`} onClick={() => { setMode('signin'); setError(null); }}>
           Sign in
         </button>
         <button type="button" role="tab" aria-selected={mode === 'signup'} className={`tabs__tab${mode === 'signup' ? ' is-active' : ''}`} onClick={() => { setMode('signup'); setError(null); setUsername(''); setUsernameEdited(false); }}>
@@ -133,6 +166,39 @@ export function Login() {
               </span>
             </div>
           </>
+        ) : mode === 'reset' ? (
+          <>
+            <h1>Reset your password</h1>
+            <p className="muted">Use the recovery code you saved when you made your account.</p>
+            <div className="field">
+              <label htmlFor="username">Username</label>
+              <input
+                id="username"
+                className="input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                placeholder="e.g. masolanki"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="code">Recovery code</label>
+              <input
+                id="code"
+                className="input input--code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="one-time-code"
+              />
+            </div>
+          </>
         ) : (
           <>
             <h1>Welcome back</h1>
@@ -154,7 +220,7 @@ export function Login() {
         )}
 
         <div className="field">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">{mode === 'reset' ? 'New password' : 'Password'}</label>
           <div className="input-wrap">
             <input
               id="password"
@@ -162,14 +228,14 @@ export function Login() {
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               minLength={6}
             />
             <button type="button" className="input-wrap__btn" onClick={() => setShowPassword((s) => !s)}>
               {showPassword ? 'Hide' : 'Show'}
             </button>
           </div>
-          {mode === 'signup' && <span className="field__hint">At least 6 characters. Write it down somewhere safe.</span>}
+          {mode !== 'signin' && <span className="field__hint">At least 6 characters. Write it down somewhere safe.</span>}
         </div>
 
         {error && <p className="field__error" role="alert">{error}</p>}
@@ -177,10 +243,20 @@ export function Login() {
         <button
           type="submit"
           className="btn btn--primary btn--lg btn--block"
-          disabled={busy || !username || !password || (mode === 'signup' && (!firstName.trim() || check.state !== 'ok'))}
+          disabled={busy || !username || !password || (mode === 'signup' && (!firstName.trim() || check.state !== 'ok')) || (mode === 'reset' && code.replace(/[^0-9A-Z]/gi, '').length < 16)}
         >
-          {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+          {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Set new password'}
         </button>
+        {mode === 'signin' && (
+          <button type="button" className="link-btn" onClick={() => { setMode('reset'); setError(null); setPassword(''); }}>
+            Forgot password?
+          </button>
+        )}
+        {mode === 'reset' && (
+          <button type="button" className="link-btn" onClick={() => { setMode('signin'); setError(null); setPassword(''); }}>
+            Back to sign in
+          </button>
+        )}
       </form>
     </main>
   );

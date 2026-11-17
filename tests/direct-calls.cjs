@@ -137,6 +137,10 @@ async function token(username) {
       await riya.page.screenshot({ path: path.join(OUT, 'signup.png') });
       await riya.page.getByLabel('Password', { exact: true }).fill('secret123');
       await riya.page.getByRole('button', { name: 'Create account' }).last().click();
+      await riya.page.getByTestId('recovery-code').waitFor({ timeout: 15000 });
+      console.log('recovery code shown after sign-up:', /^[2-9A-Z]{4}(-[2-9A-Z]{4}){3}$/.test(await riya.page.getByTestId('recovery-code').innerText()));
+      await riya.page.getByLabel('I’ve saved my recovery code').check();
+      await riya.page.getByRole('button', { name: 'Continue' }).click();
       await riya.page.getByTestId('my-username').waitFor({ timeout: 15000 });
       await riya.page.getByLabel('Add a family member').fill('tstmom');
       await riya.page.getByRole('button', { name: 'Add', exact: true }).click();

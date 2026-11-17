@@ -507,3 +507,36 @@ a:hover { color: var(--accent-hover); }
 .call__calling h2 { font-size: 30px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 .call__calling p { font-size: 18px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 .call__calling-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px; }
+
+/* ----- Recovery codes & settings ----- */
+.banner--warn { background: #fffaf0; color: #78350f; border: 1px solid #fcd9a8; }
+.banner--ok { background: #ecfdf5; color: #14532d; border: 1px solid #a7f3d0; }
+.recovery { display: flex; flex-direction: column; gap: 14px; }
+.recovery__code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: clamp(17px, 5.1vw, 28px); font-weight: 700; letter-spacing: 0.05em;
+  text-align: center; padding: 16px 8px; border-radius: 14px;
+  background: #f3eee8; border: 2px dashed #d6ccc0; white-space: nowrap; overflow-x: auto;
+  user-select: all;
+}
+.recovery__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.recovery__actions .btn { flex: 1 1 140px; }
+.checkbox { display: flex; align-items: center; gap: 10px; font-weight: 700; min-height: 44px; cursor: pointer; }
+.checkbox input { width: 22px; height: 22px; accent-color: var(--accent); }
+.input--code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+.auth .link-btn { align-self: center; }
+
+.account { display: flex; flex-direction: column; gap: 18px; }
+.account__group { display: flex; flex-direction: column; gap: 10px; }
+.account__group + .account__group { border-top: 1px solid #efe7dd; padding-top: 16px; }
+.account h3 { margin: 0; font-size: 17px; font-weight: 800; }
+.account__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.account__form { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.ringtones { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.ringtone {
+  display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px;
+  border-radius: 12px; border: 2px solid #efe7dd; background: var(--surface);
+  font-weight: 700; font-size: 15px; color: var(--text); cursor: pointer; text-align: left;
+}
+.ringtone.is-selected { border-color: var(--accent); color: var(--accent); }
+.ringtone__icon { width: 20px; text-align: center; }

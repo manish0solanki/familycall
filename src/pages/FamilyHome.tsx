@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
+import { AccountSettings } from '../components/AccountSettings';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { useAuth } from '../lib/auth';
@@ -37,6 +38,7 @@ export function FamilyHome() {
   const [push, setPush] = useState<PushState>(pushState);
   const [pushBusy, setPushBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveRecovery, setSaveRecovery] = useState(false);
   const me = profile!;
 
   const load = useCallback(async () => {
@@ -161,6 +163,22 @@ export function FamilyHome() {
             </button>
             <button type="button" className="btn btn--secondary" onClick={calls.dismissMissed} aria-label="Dismiss">✕</button>
           </div>
+        </div>
+      )}
+
+      {!me.recovery_set_at && (
+        <div className="banner banner--warn" role="status">
+          <span>Save a recovery code so you can reset your password if you forget it.</span>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => {
+              setSaveRecovery(true);
+              setTimeout(() => document.getElementById('account')?.scrollIntoView({ behavior: 'smooth' }), 50);
+            }}
+          >
+            Save code
+          </button>
         </div>
       )}
 
@@ -304,6 +322,8 @@ export function FamilyHome() {
           </ul>
         </section>
       )}
+
+      <AccountSettings openRecovery={saveRecovery} />
 
       <section className="card link-call">
         <h2>Call someone without an account</h2>

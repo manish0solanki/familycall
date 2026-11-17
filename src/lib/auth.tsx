@@ -9,7 +9,14 @@ interface AuthState {
   session: Session | null;
   profile: Profile | null;
   signIn: (username: string, password: string) => Promise<void>;
-  signUp: (input: { firstName: string; lastName: string; username: string; password: string }) => Promise<void>;
+  /** Creates the account, signs in, and returns its recovery code (show it once!). */
+  signUp: (input: { firstName: string; lastName: string; username: string; password: string }) => Promise<string>;
+  /** Forgot password: sets a new one with the recovery code; returns the next recovery code. */
+  resetPassword: (username: string, code: string, password: string) => Promise<string>;
+  /** Signed in: change password (other devices are signed out). */
+  changePassword: (currentPassword: string, password: string) => Promise<void>;
+  /** Signed in: replace the recovery code; returns the new one. */
+  newRecoveryCode: () => Promise<string>;
   signOut: () => Promise<void>;
 }
 
@@ -42,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     supabase
       .from('profiles')
-      .select('id, username, display_name, last_seen')
+      .select('id, username, display_name, last_seen, recovery_set_at')
       .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => {
@@ -69,19 +76,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(
     async (input: { firstName: string; lastName: string; username: string; password: string }) => {
-      await api('signup', input);
+      const { recoveryCode } = await api<{ recoveryCode: string }>('signup', input);
       await signIn(input.username, input.password);
+      return recoveryCode;
     },
     [signIn],
   );
+
+  const resetPassword = useCallback(
+    async (username: string, code: string, password: string) => {
+      const { recoveryCode } = await api<{ recoveryCode: string }>('resetPassword', { username: username.trim().toLowerCase(), code, password });
+      await signIn(username, password);
+      return recoveryCode;
+    },
+    [signIn],
+  );
+
+  const username = profile?.username;
+  const changePassword = useCallback(
+    async (currentPassword: string, password: string) => {
+      await api('changePassword', { currentPassword, password });
+      // Changing the password signs the account out everywhere; sign back in here.
+      if (username) await signIn(username, password);
+    },
+    [signIn, username],
+  );
+
+  const newRecoveryCode = useCallback(async () => {
+    const { recoveryCode } = await api<{ recoveryCode: string }>('createRecoveryCode');
+    setProfile((p) => (p ? { ...p, recovery_set_at: new Date().toISOString() } : p));
+    return recoveryCode;
+  }, []);
 
   const signOut = useCallback(async () => {
     await supabase?.auth.signOut();
   }, []);
 
   const value = useMemo(
-    () => ({ ready, session, profile, signIn, signUp, signOut }),
-    [ready, session, profile, signIn, signUp, signOut],
+    () => ({ ready, session, profile, signIn, signUp, resetPassword, changePassword, newRecoveryCode, signOut }),
+    [ready, session, profile, signIn, signUp, resetPassword, changePassword, newRecoveryCode, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
