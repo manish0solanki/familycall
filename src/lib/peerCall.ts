@@ -24,7 +24,20 @@ export interface PeerCallOptions {
   onChange: (state: CallState) => void;
 }
 
-/** If a dropped connection hasn't recovered after this long, start over. */
+/** Add ?debug to the URL to log every signaling message and connection state change. */
+const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
+function debug(...args: unknown[]) {
+  if (DEBUG) console.info('[call]', ...args);
+}
+function describe(m: Pick<SignalMessage, 'type' | 'description' | 'candidate'>): string {
+  if (m.description) return `${m.type}:${m.description.type}`;
+  if (m.candidate) return `${m.type}:${m.candidate.candidate?.split(' ')[7] ?? 'end'}`;
+  return m.type;
+}
+
+/** How often to re-announce ourselves while waiting alone in the room. */
+const HELLO_INTERVAL_MS = 3_000;
+/** If a call hasn't connected (or a dropped one hasn't recovered) after this long, start over. */
 const RECOVERY_TIMEOUT_MS = 15_000;
 
 /**
@@ -46,6 +59,15 @@ export class PeerCall {
   private ignoreOffer = false;
   /** Whether our camera/mic tracks are on the current peer connection yet. */
   private tracksAttached = false;
+  /** ICE candidates that arrived before the description they belong to. */
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+  /** Candidates from a peer we haven't paired with yet (their welcome/offer is still in flight). */
+  private readonly unpairedCandidates = new Map<string, RTCIceCandidateInit[]>();
+  private initiator = false;
+  private control: RTCDataChannel | null = null;
+  /** When we joined the room; see joinedBefore(). */
+  private since = 0;
+  private helloTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   /** Messages are handled one at a time so ICE candidates never overtake descriptions. */
@@ -72,8 +94,13 @@ export class PeerCall {
     }
     if (this.closed) return;
 
+    this.since = Date.now();
     this.update({ status: 'waiting' });
     this.send({ type: 'hello' });
+    // Broadcast messages can be dropped, so keep announcing ourselves while alone.
+    this.helloTimer = setInterval(() => {
+      if (this.state.status === 'waiting') this.send({ type: 'hello' });
+    }, HELLO_INTERVAL_MS);
   }
 
   /** Swap the camera track being sent (e.g. after switching front/back camera). */
@@ -85,7 +112,9 @@ export class PeerCall {
   leave() {
     if (this.closed) return;
     if (this.remoteId) this.send({ type: 'bye', to: this.remoteId });
+    if (this.control?.readyState === 'open') this.control.send('bye');
     this.closed = true;
+    if (this.helloTimer) clearInterval(this.helloTimer);
     this.teardownPeer();
     this.signaling?.close();
   }
@@ -98,7 +127,14 @@ export class PeerCall {
   }
 
   private send(message: Omit<SignalMessage, 'from' | 'name'>) {
-    this.signaling?.send({ ...message, from: this.id, name: this.opts.name });
+    debug('send', describe(message));
+    this.signaling?.send({ ...message, from: this.id, name: this.opts.name, since: this.since });
+  }
+
+  /** Whether we joined before the sender of `m` (ties broken by id). The earlier one sends the offer. */
+  private joinedBefore(m: SignalMessage): boolean {
+    const theirs = m.since ?? Number.MAX_SAFE_INTEGER;
+    return this.since < theirs || (this.since === theirs && this.id < m.from);
   }
 
   /** The "polite" peer backs down when both send an offer at the same time. */
@@ -109,18 +145,32 @@ export class PeerCall {
   private async handle(m: SignalMessage) {
     if (this.closed || m.from === this.id) return;
     if (m.to && m.to !== this.id) return;
+    debug('recv', describe(m));
 
     switch (m.type) {
       case 'hello': {
-        if (this.remoteId === m.from) return;
+        if (this.remoteId === m.from) {
+          // They're still announcing, so our welcome or offer was probably lost: resend.
+          if (this.initiator && this.state.status === 'connecting') {
+            this.send({ type: 'welcome', to: m.from });
+            const offer = this.pc?.localDescription;
+            if (offer?.type === 'offer') this.send({ type: 'description', to: m.from, description: offer.toJSON() });
+          }
+          return;
+        }
         if (this.remoteId) {
           // Already in a call with someone else. Phase 1 supports two people per room.
           this.send({ type: 'full', to: m.from });
           return;
         }
-        // We were here first, so we send the offer.
-        this.connectTo(m.from, m.name, true);
-        this.send({ type: 'welcome', to: m.from });
+        if (this.joinedBefore(m)) {
+          // We were here first, so we send the offer.
+          this.connectTo(m.from, m.name, true);
+          this.send({ type: 'welcome', to: m.from });
+        } else {
+          // They were here first; make sure they've heard from us so they send the offer.
+          this.send({ type: 'hello', to: m.from });
+        }
         return;
       }
       case 'welcome': {
@@ -142,16 +192,31 @@ export class PeerCall {
         return;
       }
       case 'description': {
-        if (m.from === this.remoteId && m.description) await this.onDescription(m.description);
+        if (!m.description) return;
+        // An offer can overtake the "welcome" sent just before it; it implies the same thing.
+        if (!this.remoteId && m.description.type === 'offer' && this.state.status === 'waiting') {
+          this.connectTo(m.from, m.name, false);
+        }
+        if (m.from === this.remoteId) await this.onDescription(m.description);
         return;
       }
       case 'candidate': {
-        if (m.from !== this.remoteId || !m.candidate || !this.pc) return;
-        try {
-          await this.pc.addIceCandidate(m.candidate);
-        } catch (err) {
-          if (!this.ignoreOffer) console.warn('[call] could not add ICE candidate', err);
+        if (!m.candidate) return;
+        if (!this.remoteId && this.state.status === 'waiting') {
+          // May belong to a peer whose welcome/offer hasn't arrived yet.
+          const early = this.unpairedCandidates.get(m.from) ?? [];
+          early.push(m.candidate);
+          this.unpairedCandidates.set(m.from, early);
+          return;
         }
+        if (m.from !== this.remoteId || !this.pc) return;
+        // Supabase Realtime doesn't guarantee ordering: a candidate can arrive before the
+        // offer/answer it belongs to. Hold it until the remote description is set.
+        if (!this.pc.remoteDescription) {
+          this.pendingCandidates.push(m.candidate);
+          return;
+        }
+        await this.addCandidate(m.candidate);
         return;
       }
     }
@@ -164,9 +229,12 @@ export class PeerCall {
    */
   private connectTo(peerId: string, name: string | undefined, initiator: boolean) {
     this.remoteId = peerId;
+    this.initiator = initiator;
     this.makingOffer = false;
     this.ignoreOffer = false;
     this.tracksAttached = false;
+    this.pendingCandidates = this.unpairedCandidates.get(peerId) ?? [];
+    this.unpairedCandidates.clear();
 
     const pc = new RTCPeerConnection({ iceServers: getIceServers() });
     this.pc = pc;
@@ -174,6 +242,8 @@ export class PeerCall {
     // Adding tracks triggers negotiationneeded → offer. The answering side attaches
     // its tracks to the offered transceivers instead (see attachTracksToOffer).
     if (initiator) {
+      // Direct device-to-device control channel (the answerer gets it via ondatachannel).
+      this.setupControl(pc, pc.createDataChannel('control'));
       const { localStream } = this.opts;
       for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
       this.tracksAttached = true;
@@ -183,6 +253,10 @@ export class PeerCall {
       const stream = streams[0] ?? this.state.remoteStream ?? new MediaStream();
       if (!stream.getTracks().includes(track)) stream.addTrack(track);
       this.update({ remoteStream: stream });
+    };
+
+    pc.ondatachannel = ({ channel }) => {
+      if (channel.label === 'control') this.setupControl(pc, channel);
     };
 
     pc.onicecandidate = ({ candidate }) => {
@@ -203,6 +277,7 @@ export class PeerCall {
 
     pc.onconnectionstatechange = () => {
       if (pc !== this.pc) return;
+      debug('connection', pc.connectionState, 'ice', pc.iceConnectionState);
       switch (pc.connectionState) {
         case 'connected':
           this.clearRecoveryTimer();
@@ -221,6 +296,8 @@ export class PeerCall {
     };
 
     this.update({ status: 'connecting', remoteName: name || 'Family member' });
+    // If setup stalls (lost messages, blocked network), start over instead of hanging.
+    this.startRecoveryTimer();
   }
 
   private async onDescription(description: RTCSessionDescriptionInit) {
@@ -233,10 +310,39 @@ export class PeerCall {
     if (this.ignoreOffer) return;
 
     await pc.setRemoteDescription(description);
+    const early = this.pendingCandidates.splice(0);
+    for (const candidate of early) await this.addCandidate(candidate);
     if (description.type === 'offer') {
       if (!this.tracksAttached) await this.attachTracksToOffer(pc);
       await pc.setLocalDescription();
       this.send({ type: 'description', to: this.remoteId!, description: pc.localDescription!.toJSON() });
+    }
+  }
+
+  /**
+   * Hang-ups sent through Supabase can be lost when a tab closes, so the "bye" also goes
+   * device-to-device, and the channel closing (the other side's connection went away)
+   * counts as a hang-up too. Both arrive within a moment instead of ~20 s of timeouts.
+   */
+  private setupControl(pc: RTCPeerConnection, channel: RTCDataChannel) {
+    this.control = channel;
+    const hungUp = () => {
+      if (pc === this.pc && !this.closed) {
+        debug('remote hung up (control channel)');
+        this.resetToWaiting(false);
+      }
+    };
+    channel.onmessage = ({ data }) => {
+      if (data === 'bye') hungUp();
+    };
+    channel.onclose = hungUp;
+  }
+
+  private async addCandidate(candidate: RTCIceCandidateInit) {
+    try {
+      await this.pc?.addIceCandidate(candidate);
+    } catch (err) {
+      if (!this.ignoreOffer) console.warn('[call] could not add ICE candidate', err);
     }
   }
 
@@ -285,9 +391,11 @@ export class PeerCall {
       this.pc.onicecandidate = null;
       this.pc.onnegotiationneeded = null;
       this.pc.onconnectionstatechange = null;
+      this.pc.ondatachannel = null;
       this.pc.close();
     }
     this.pc = null;
+    this.control = null;
     this.remoteId = null;
   }
 }

@@ -32,7 +32,7 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 | Camera + mic | `getUserMedia`, toggles, camera switching | `src/lib/useLocalMedia.ts` |
 | Screens | Home, pre-join lobby, in-call | `src/pages/` |
 
-Each room holds two people in Phase 1. The person already in the room sends the first offer and the joiner answers, so the initial setup never collides.
+Each room holds two people in Phase 1. See [Reliability notes](#reliability-notes) for how the call engine copes with lost or reordered messages.
 
 ## Run locally
 
@@ -93,6 +93,19 @@ npm run test:connect
 
 - `test:e2e`: start → join → connected both ways with audio and video → mute/camera toggles → a third person is told the room is full → hang up → rejoin → closing the tab → desktop layout → bad room codes. Screenshots go to `tests/screenshots/`.
 - `test:connect`: connects two people 50 times in a row to catch timing races.
+- `test:browsers`: calls between two completely separate browsers, so they can only meet through Supabase. Needs a build with Supabase settings.
+
+## Reliability notes
+
+Supabase Realtime broadcast is fast (calls connect in about 0.6 s) but doesn't guarantee delivery or ordering, so the call engine:
+
+- holds ICE candidates that arrive before their offer/answer, and treats an early offer as the "welcome";
+- repeats "hello" every 3 s while waiting alone, and resends the offer if the other side is still announcing itself;
+- lets whoever joined the room first send the offer, so both sides never offer at once;
+- starts over if a call hasn't connected within 15 s;
+- sends hang-ups over a direct WebRTC data channel too, so closing a tab is noticed right away.
+
+Add `?debug` to a room URL to log every signaling message in the browser console.
 
 ## Roadmap
 

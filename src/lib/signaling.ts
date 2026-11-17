@@ -19,6 +19,8 @@ export interface SignalMessage {
   to?: string;
   /** Sender's display name. */
   name?: string;
+  /** When the sender joined the room (ms since epoch). Whoever joined first sends the offer. */
+  since?: number;
   description?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
 }
