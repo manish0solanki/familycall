@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "test:e2e": "node tests/call-scenarios.cjs",
     "test:connect": "node tests/connect-repeat.cjs 50",
-    "test:browsers": "node tests/two-browsers.cjs http://localhost:4173 10"
+    "test:browsers": "node tests/two-browsers.cjs http://localhost:4173 10",
+    "test:qr": "node tests/qr-join.cjs"
   },
   "dependencies": {
     "@supabase/realtime-js": "^2.119.0",
+    "jsqr": "^1.4.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

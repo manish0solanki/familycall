@@ -31,7 +31,7 @@ export function InvitePanel({ roomId, compact = false }: { roomId: string; compa
   return (
     <div className={`invite${compact ? ' invite--compact' : ''}`}>
       <div className="invite__qr">
-        <QRCodeSVG value={link} size={compact ? 132 : 168} marginSize={2} title="QR code to join this call" />
+        <QRCodeSVG value={link} size={compact ? 116 : 168} marginSize={2} title="QR code to join this call" />
       </div>
       <div className="invite__body">
         <span className="invite__label">Room code</span>

@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon';
 import { InvitePanel } from '../components/InvitePanel';
 import { VideoView } from '../components/VideoView';
 import { PeerCall, type CallState } from '../lib/peerCall';
+import { signalingMode } from '../lib/signaling';
 import type { LocalMedia } from '../lib/useLocalMedia';
 
 interface Props {
@@ -21,6 +22,10 @@ function formatDuration(totalSeconds: number): string {
   const ss = String(s).padStart(2, '0');
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+/** Deployed without Supabase settings: calls can't reach other devices. Warn instead of failing silently. */
+const testMode =
+  signalingMode === 'local' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 const STATUS_TEXT: Record<CallState['status'], string> = {
   joining: 'Joining…',
@@ -95,11 +100,19 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
               <button type="button" className="btn btn--light btn--lg" onClick={() => window.location.reload()}>Try again</button>
             </div>
           ) : (
-            <div className="call__waiting">
-              <h2>{call.status === 'joining' ? 'Joining…' : 'Waiting for family to join'}</h2>
-              <p>Send this link or let them scan the QR code.</p>
-              <InvitePanel roomId={roomId} />
-            </div>
+            <>
+              {/* Like a phone's calling screen: your own camera fills the background while you wait. */}
+              <VideoView stream={stream} muted mirrored={media.facing === 'user'} className={`call__bg${media.camOn ? '' : ' is-off'}`} label="Your camera" />
+              <div className="call__waiting">
+                {testMode && (
+                  <p className="call__warning" role="alert">
+                    Test mode: this site is missing its call-server settings, so calls only connect between tabs of this browser.
+                  </p>
+                )}
+                <p>Send this link, or let them scan the QR code.</p>
+                <InvitePanel roomId={roomId} compact />
+              </div>
+            </>
           )}
         </div>
       )}
@@ -111,11 +124,13 @@ export function CallScreen({ roomId, name, media, onLeave }: Props) {
         </div>
       </header>
 
-      <div className={`call__self${media.camOn ? '' : ' is-off'}`}>
-        <VideoView stream={stream} muted mirrored={media.facing === 'user'} className="call__self-video" label="Your camera" />
-        {!media.camOn && <span className="call__self-off"><Icon name="videoOff" size={22} /></span>}
-        <span className="call__self-label">You</span>
-      </div>
+      {hasRemote && (
+        <div className={`call__self${media.camOn ? '' : ' is-off'}`}>
+          <VideoView stream={stream} muted mirrored={media.facing === 'user'} className="call__self-video" label="Your camera" />
+          {!media.camOn && <span className="call__self-off"><Icon name="videoOff" size={22} /></span>}
+          <span className="call__self-label">You</span>
+        </div>
+      )}
 
       <nav className="call__controls" aria-label="Call controls">
         <button

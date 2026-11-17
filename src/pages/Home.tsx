@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { QrScanner } from '../components/QrScanner';
 import { loadName, saveName } from '../lib/name';
 import { newRoomId, parseRoomInput } from '../lib/roomId';
 
@@ -16,6 +17,7 @@ export function Home() {
   const [name, setName] = useState(loadName);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const start = () => {
     saveName(name);
@@ -94,7 +96,26 @@ export function Home() {
           {codeError && <span id="code-error" className="field__error">{codeError}</span>}
         </div>
         <button type="submit" className="btn btn--primary btn--lg">Join</button>
+        <div className="divider"><span>or</span></div>
+        <button type="button" className="btn btn--secondary btn--lg" onClick={() => setScanning(true)}>
+          <Icon name="qr" size={22} />
+          Scan QR code
+        </button>
       </form>
+
+      {scanning && (
+        <QrScanner
+          onClose={() => setScanning(false)}
+          onResult={(text) => {
+            const roomId = parseRoomInput(text);
+            if (!roomId) return 'That QR code isn’t a FamilyCall invite. Try the one shown on the call screen.';
+            saveName(name);
+            setScanning(false);
+            navigate(`/room/${roomId}`);
+            return null;
+          }}
+        />
+      )}
     </main>
   );
 }

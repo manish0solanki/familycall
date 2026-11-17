@@ -7,7 +7,7 @@ Free video calls for families. Start a call, share the link or QR code, and talk
 ## Features (Phase 1)
 
 - Start a call and get a room link + QR code to share
-- Join by tapping the link, scanning the QR code, or typing the room code
+- Join by tapping the link, typing the room code, or scanning the QR code with the in-app scanner (camera, or upload a photo of the code)
 - Camera preview before joining, with mic/camera toggles
 - 1-to-1 video and voice calls, peer-to-peer and encrypted (WebRTC)
 - In-call controls: mute, camera on/off, switch front/back camera, hang up
@@ -93,6 +93,7 @@ npm run test:connect
 
 - `test:e2e`: start → join → connected both ways with audio and video → mute/camera toggles → a third person is told the room is full → hang up → rejoin → closing the tab → desktop layout → bad room codes. Screenshots go to `tests/screenshots/`.
 - `test:connect`: connects two people 50 times in a row to catch timing races.
+- `test:qr`: joining by uploading a photo of the QR code and by scanning it with the camera (feeds a video of the code to Chrome's fake camera; needs ffmpeg).
 - `test:browsers`: calls between two completely separate browsers, so they can only meet through Supabase. Needs a build with Supabase settings.
 
 ## Reliability notes
