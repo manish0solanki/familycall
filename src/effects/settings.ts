@@ -8,13 +8,20 @@ export type BeautyLevel = 0 | 1 | 2 | 3;
 
 export type FilterId = 'none' | 'warm' | 'cool' | 'vivid' | 'bw' | 'vintage' | 'soft';
 
+/**
+ * The shape of the video I send. 'auto' sends the camera's full picture (its shape follows
+ * how the device is held). 'tall' / 'wide' cut that picture to the chosen shape.
+ */
+export type VideoShape = 'auto' | 'tall' | 'wide';
+
 export interface EffectSettings {
   background: BackgroundSetting;
   beauty: BeautyLevel;
   filter: FilterId;
+  shape: VideoShape;
 }
 
-export const DEFAULT_EFFECTS: EffectSettings = { background: { type: 'none' }, beauty: 0, filter: 'none' };
+export const DEFAULT_EFFECTS: EffectSettings = { background: { type: 'none' }, beauty: 0, filter: 'none', shape: 'auto' };
 
 export const SCENES = [
   { id: 'beach', name: 'Beach sunset' },
@@ -54,7 +61,7 @@ export function needsSegmentation(s: EffectSettings): boolean {
 
 /** Whether the camera picture needs any processing at all (otherwise it's sent untouched). */
 export function needsProcessing(s: EffectSettings): boolean {
-  return needsSegmentation(s) || s.beauty > 0 || s.filter !== 'none';
+  return needsSegmentation(s) || s.beauty > 0 || s.filter !== 'none' || s.shape !== 'auto';
 }
 
 export function sameBackground(a: BackgroundSetting, b: BackgroundSetting): boolean {
@@ -77,6 +84,7 @@ export function loadEffects(): EffectSettings {
       background: background ?? DEFAULT_EFFECTS.background,
       beauty: ([0, 1, 2, 3] as const).includes(saved.beauty) ? saved.beauty : 0,
       filter: saved.filter in FILTERS ? saved.filter : 'none',
+      shape: saved.shape === 'tall' || saved.shape === 'wide' ? saved.shape : 'auto',
     };
   } catch {
     return DEFAULT_EFFECTS;

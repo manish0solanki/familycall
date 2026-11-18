@@ -28,7 +28,7 @@ Free video calls for families. Start a call, share the link or QR code, and talk
   - Background blur (slight or strong) and replacement with six built-in scenes or your own photo
   - Beautify with face tracking: smooths and brightens skin only, keeping eyes, eyebrows, lips and nose sharp (three levels)
   - Colour filters: Warm, Cool, Vivid, B&W, Vintage, Soft glow
-- Phone and desktop layouts. Phones held upright send tall (9:16) video so it fills the other phone's screen; if shapes don't match (e.g. a computer's wide picture on a phone), the whole picture is shown instead of a zoomed-in crop. Tap the video to switch between fit and fill
+- Phone and desktop layouts. Phones held upright send tall (9:16) video so it fills the other phone's screen; if shapes don't match (e.g. a computer's wide picture on a phone), the whole picture is shown instead of a zoomed-in crop. Tap the video (or the Fit/Fill button) to switch between fit and fill. "My video: Auto / Tall / Wide" chooses the shape you send: Auto sends the camera's full picture (shape follows how you hold the device); Tall/Wide cut it to that shape
 
 ## How it works
 

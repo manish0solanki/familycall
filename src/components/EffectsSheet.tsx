@@ -148,7 +148,7 @@ export function EffectsSheet({ media, onClose }: { media: LocalMedia; onClose: (
         </div>
 
         <footer className="sheet__footer">
-          <button type="button" className="btn btn--secondary" onClick={() => setEffects({ background: { type: 'none' }, beauty: 0, filter: 'none' })}>
+          <button type="button" className="btn btn--secondary" onClick={() => setEffects({ ...effects, background: { type: 'none' }, beauty: 0, filter: 'none' })}>
             Reset all
           </button>
           <button type="button" className="btn btn--primary" onClick={onClose}>Done</button>

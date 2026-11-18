@@ -6,6 +6,7 @@ import { effectsActive } from '../effects/active';
 import { InvitePanel } from '../components/InvitePanel';
 import { VideoView } from '../components/VideoView';
 import { Avatar } from '../components/Avatar';
+import { ShapeButton } from '../components/ShapeButton';
 import { useCalls, type CallParty } from '../lib/calls';
 import { PeerCall, type CallState } from '../lib/peerCall';
 import { playRingback } from '../lib/tones';
@@ -333,6 +334,8 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
           <h1 className="call__title">{title}</h1>
           <p className="call__subtitle" role="status" data-testid="call-status">{subtitle}</p>
           {DEBUG_VIDEO && hasRemote && <VideoSizes local={media.previewStream} remote={remoteSize} />}
+          <div className="call__pills">
+          <ShapeButton media={media} />
           {hasRemote && (
             <button
               type="button"
@@ -345,6 +348,7 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
               {remoteFit === 'cover' ? 'Fit' : 'Fill'}
             </button>
           )}
+          </div>
         </div>
       </header>
 

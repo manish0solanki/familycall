@@ -8,6 +8,7 @@ import { VideoView } from '../components/VideoView';
 import { loadName, saveName } from '../lib/name';
 import { isValidRoomId } from '../lib/roomId';
 import { useLocalMedia } from '../lib/useLocalMedia';
+import { ShapeButton } from '../components/ShapeButton';
 import { useAuth } from '../lib/auth';
 import { CallScreen, type DirectCall } from './CallScreen';
 
@@ -96,6 +97,7 @@ export function Room() {
               <Icon name="sparkles" />
             </button>
           </div>
+          {media.stream && <ShapeButton media={media} className="shape-pill" />}
         </section>
         {showEffects && <EffectsSheet media={media} onClose={() => setShowEffects(false)} />}
 
