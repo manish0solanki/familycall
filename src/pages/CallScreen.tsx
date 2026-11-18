@@ -48,23 +48,37 @@ function formatDuration(totalSeconds: number): string {
 const testMode =
   signalingMode === 'local' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
 
-/** Add ?debug to the room link to show the video sizes being sent and received. */
-const DEBUG_VIDEO = new URLSearchParams(window.location.search).has('debug');
+/**
+ * Video size readout for troubleshooting. Open the app once with ?debug to turn it on
+ * (remembered on this device, so it also shows on tap-to-call); ?debug=0 turns it off.
+ */
+const DEBUG_VIDEO = (() => {
+  const param = new URLSearchParams(window.location.search).get('debug');
+  try {
+    if (param === '0') localStorage.removeItem('familycall:debug');
+    else if (param !== null) localStorage.setItem('familycall:debug', '1');
+    return localStorage.getItem('familycall:debug') === '1';
+  } catch {
+    return param !== null && param !== '0';
+  }
+})();
 
-function VideoSizes({ local, remote }: { local: MediaStream | null; remote: { w: number; h: number } | null }) {
+function VideoSizes({ local, remote, camera }: { local: MediaStream | null; remote: { w: number; h: number } | null; camera: () => string }) {
   const [sent, setSent] = useState('');
+  const [cam, setCam] = useState('');
   useEffect(() => {
     const read = () => {
       const s = local?.getVideoTracks()[0]?.getSettings();
       setSent(s?.width ? `${s.width}×${s.height}` : '?');
+      setCam(camera());
     };
     read();
     const timer = setInterval(read, 1000);
     return () => clearInterval(timer);
-  }, [local]);
+  }, [local, camera]);
   return (
     <p className="call__debug" data-testid="video-sizes">
-      Sending {sent} · Receiving {remote ? `${remote.w}×${remote.h}` : '?'} · Screen {window.innerWidth}×{window.innerHeight}
+      Camera {cam} · Sending {sent} · Receiving {remote ? `${remote.w}×${remote.h}` : '?'} · Screen {window.innerWidth}×{window.innerHeight}
     </p>
   );
 }
@@ -333,7 +347,7 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
         <div>
           <h1 className="call__title">{title}</h1>
           <p className="call__subtitle" role="status" data-testid="call-status">{subtitle}</p>
-          {DEBUG_VIDEO && hasRemote && <VideoSizes local={media.previewStream} remote={remoteSize} />}
+          {DEBUG_VIDEO && hasRemote && <VideoSizes local={media.previewStream} remote={remoteSize} camera={media.cameraSize} />}
           <div className="call__pills">
           <ShapeButton media={media} />
           {hasRemote && (

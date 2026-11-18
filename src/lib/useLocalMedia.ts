@@ -5,15 +5,17 @@ import { loadEffects, needsProcessing, saveEffects, type EffectSettings } from '
 type Facing = 'user' | 'environment';
 
 /**
- * Ask every camera for its normal 1280×720 picture and never let the browser crop or
- * rescale it (`resizeMode: 'none'`). Phones then rotate the full, uncropped picture to
- * match how they're held (upright → 720×1280).
+ * Ask every camera for its normal 1280×720 picture. Phones turn it upright to match how
+ * they're held (upright → 720×1280).
  *
- * (Asking a phone for a tall 720×1280 shape directly made Android Chrome crop its wide
- * sensor frame *before* rotating, which sent a small, zoomed-in strip.)
+ * Don't ask for a particular shape (e.g. 720×1280 or an aspect ratio): Android Chrome
+ * matches that against the camera's wide sensor modes *before* turning the picture, so it
+ * crops a small, zoomed-in strip. And don't set resizeMode: 'none': then Android Chrome
+ * hands over frames that aren't turned upright yet, and the effects step (which redraws
+ * each frame on a canvas) sends them sideways.
  */
 function videoConstraints(): MediaTrackConstraints {
-  return { width: { ideal: 1280 }, height: { ideal: 720 }, resizeMode: 'none' } as MediaTrackConstraints;
+  return { width: { ideal: 1280 }, height: { ideal: 720 } };
 }
 
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
@@ -175,9 +177,16 @@ export function useLocalMedia() {
     return video ? new MediaStream([video]) : null;
   }, [stream, videoVersion]);
 
+  /** The camera's own picture size, before effects (for the ?debug readout). */
+  const cameraSize = useCallback(() => {
+    const s = rawRef.current?.getVideoTracks()[0]?.getSettings();
+    return s?.width ? `${s.width}×${s.height}` : '?';
+  }, []);
+
   return {
     stream,
     previewStream,
+    cameraSize,
     videoVersion,
     error,
     micOn,
