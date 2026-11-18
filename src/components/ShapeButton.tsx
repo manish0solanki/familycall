@@ -1,29 +1,20 @@
-import type { VideoShape } from '../effects/settings';
 import type { LocalMedia } from '../lib/useLocalMedia';
 import { Icon } from './Icon';
 
-const NEXT: Record<VideoShape, VideoShape> = { auto: 'tall', tall: 'wide', wide: 'auto' };
-const LABEL: Record<VideoShape, string> = { auto: 'Auto', tall: 'Tall', wide: 'Wide' };
-const HELP: Record<VideoShape, string> = {
-  auto: 'Sends your camera’s full picture; its shape follows how you hold your device',
-  tall: 'Sends a tall (portrait) picture, cut from your camera’s picture',
-  wide: 'Sends a wide (landscape) picture, cut from your camera’s picture',
-};
-
-/** Cycles the shape of the video I send: Auto → Tall → Wide. */
+/** Switches my camera between a normal and a wide-angle view (more of the room). */
 export function ShapeButton({ media, className = 'call__fit-btn' }: { media: LocalMedia; className?: string }) {
-  const shape = media.effects.shape;
+  const wide = media.view === 'wide';
   return (
     <button
       type="button"
       className={className}
-      onClick={() => media.setEffects({ ...media.effects, shape: NEXT[shape] })}
-      title={HELP[shape]}
-      aria-label={`My video shape: ${LABEL[shape]}. ${HELP[shape]}. Tap to change.`}
-      data-testid="shape-button"
+      onClick={() => void media.setView(wide ? 'normal' : 'wide')}
+      aria-pressed={wide}
+      aria-label={wide ? 'Camera view: wide angle. Tap for normal view.' : 'Camera view: normal. Tap for wide angle (fits more of the room).'}
+      data-testid="view-button"
     >
-      <Icon name={shape === 'wide' ? 'shapeWide' : shape === 'tall' ? 'shapeTall' : 'shapeAuto'} size={18} />
-      My video: {LABEL[shape]}
+      <Icon name={wide ? 'shapeWide' : 'shapeAuto'} size={18} />
+      {wide ? 'Wide angle' : 'Normal view'}
     </button>
   );
 }

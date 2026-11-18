@@ -14,8 +14,55 @@ type Facing = 'user' | 'environment';
  * hands over frames that aren't turned upright yet, and the effects step (which redraws
  * each frame on a canvas) sends them sideways.
  */
-function videoConstraints(): MediaTrackConstraints {
-  return { width: { ideal: 1280 }, height: { ideal: 720 } };
+function videoConstraints(view: CameraView): MediaTrackConstraints {
+  // "Wide angle" asks for the camera's 4:3 mode: the whole sensor, so more of the room
+  // fits (16:9 video leaves part of a phone's 4:3 sensor unused).
+  return { width: { ideal: 1280 }, height: { ideal: view === 'wide' ? 960 : 720 } };
+}
+
+/**
+ * Normal or wide-angle view. Wide angle = the camera's full sensor plus its widest zoom
+ * (below 1× on phones whose browser exposes an ultra-wide lens, e.g. 0.6×). Nothing is
+ * ever cropped.
+ */
+export type CameraView = 'normal' | 'wide';
+const VIEW_KEY = 'familycall:view';
+
+function loadView(): CameraView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'wide' ? 'wide' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+const isPhone = () =>
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+type ZoomRange = { min: number; max: number; step?: number };
+function zoomRange(track: MediaStreamTrack): ZoomRange | null {
+  const caps = (track.getCapabilities?.() ?? {}) as { zoom?: ZoomRange };
+  return caps.zoom && caps.zoom.max > caps.zoom.min ? caps.zoom : null;
+}
+
+/** Applies the view to a camera track (size + zoom in one go, so neither resets the other). */
+async function applyView(track: MediaStreamTrack, view: CameraView) {
+  const zoom = zoomRange(track);
+  const constraints: MediaTrackConstraints = { ...videoConstraints(view) };
+  if (zoom) {
+    const value = view === 'wide' ? zoom.min : Math.min(zoom.max, Math.max(zoom.min, 1));
+    (constraints as Record<string, unknown>).advanced = [{ zoom: value }];
+  }
+  try {
+    await track.applyConstraints(constraints);
+  } catch (err) {
+    console.warn('[media] could not change camera view', err);
+  }
+}
+
+/** Camera request: phones also ask for zoom control (needed to reach a wide-angle lens). */
+function cameraRequest(view: CameraView, facingMode: MediaTrackConstraints['facingMode']): MediaTrackConstraints {
+  return { ...videoConstraints(view), facingMode, ...(isPhone() ? { zoom: true } : {}) } as MediaTrackConstraints;
 }
 
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
@@ -51,6 +98,9 @@ export function useLocalMedia() {
   const [canSwitchCamera, setCanSwitchCamera] = useState(false);
   const [effects, setEffectsState] = useState<EffectSettings>(loadEffects);
   const [effectsStatus, setEffectsStatus] = useState<EffectsStatus | 'off'>('off');
+  const [view, setViewState] = useState<CameraView>(loadView);
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   /** Straight from the camera and microphone. */
   const rawRef = useRef<MediaStream | null>(null);
@@ -75,12 +125,13 @@ export function useLocalMedia() {
     }
     let cancelled = false;
     navigator.mediaDevices
-      .getUserMedia({ video: { ...videoConstraints(), facingMode: 'user' }, audio: AUDIO })
+      .getUserMedia({ video: cameraRequest(viewRef.current, 'user'), audio: AUDIO })
       .then(async (raw) => {
         if (cancelled) {
           raw.getTracks().forEach((t) => t.stop());
           return;
         }
+        if (viewRef.current === 'wide') await applyView(raw.getVideoTracks()[0], 'wide');
         rawRef.current = raw;
         outRef.current = new MediaStream(raw.getTracks());
         setStream(outRef.current);
@@ -154,13 +205,14 @@ export function useLocalMedia() {
     old?.stop();
     let track: MediaStreamTrack;
     try {
-      const fresh = await navigator.mediaDevices.getUserMedia({ video: { ...videoConstraints(), facingMode: { ideal: next } } });
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: cameraRequest(viewRef.current, { ideal: next }) });
       track = fresh.getVideoTracks()[0];
+      await applyView(track, viewRef.current);
       setFacing(next);
     } catch (err) {
       console.error('[media] could not switch camera', err);
       // Get the previous camera back.
-      const fallback = await navigator.mediaDevices.getUserMedia({ video: { ...videoConstraints(), facingMode: { ideal: facing } } });
+      const fallback = await navigator.mediaDevices.getUserMedia({ video: cameraRequest(viewRef.current, { ideal: facing }) });
       track = fallback.getVideoTracks()[0];
     }
     track.enabled = camOnRef.current;
@@ -177,16 +229,33 @@ export function useLocalMedia() {
     return video ? new MediaStream([video]) : null;
   }, [stream, videoVersion]);
 
-  /** The camera's own picture size, before effects (for the ?debug readout). */
+  /** Normal or wide-angle camera view (remembered). */
+  const setView = useCallback(async (next: CameraView) => {
+    setViewState(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // ignore
+    }
+    const track = rawRef.current?.getVideoTracks()[0];
+    if (track) await applyView(track, next);
+  }, []);
+
+  /** The camera's own picture size and zoom, before effects (for the ?debug readout). */
   const cameraSize = useCallback(() => {
-    const s = rawRef.current?.getVideoTracks()[0]?.getSettings();
-    return s?.width ? `${s.width}×${s.height}` : '?';
+    const track = rawRef.current?.getVideoTracks()[0];
+    const s = track?.getSettings() as (MediaTrackSettings & { zoom?: number }) | undefined;
+    if (!s?.width) return '?';
+    const zoom = track && zoomRange(track);
+    return `${s.width}×${s.height}${zoom ? ` zoom ${s.zoom ?? '?'} (${zoom.min}–${zoom.max})` : ' (no zoom control)'}`;
   }, []);
 
   return {
     stream,
     previewStream,
     cameraSize,
+    view,
+    setView,
     videoVersion,
     error,
     micOn,

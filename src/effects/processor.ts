@@ -7,18 +7,6 @@ export type EffectsStatus = 'ready' | 'loading' | 'error';
 
 /** Processing is capped at this many pixels on the longer side: plenty for a call, and keeps phones cool. */
 const MAX_SIZE = 1280;
-
-/** The part of a W×H frame to send for the chosen shape (centre crop), in frame pixels. */
-function cropFor(shape: EffectSettings['shape'], W: number, H: number) {
-  const target = shape === 'tall' ? 9 / 16 : shape === 'wide' ? 16 / 9 : W / H;
-  let sw = W;
-  let sh = H;
-  if (W / H > target) sw = Math.round(H * target);
-  else sh = Math.round(W / target);
-  sw -= sw % 2;
-  sh -= sh % 2;
-  return { sx: Math.round((W - sw) / 2), sy: Math.round((H - sh) / 2), sw, sh };
-}
 const FPS = 30;
 /** Even on very slow devices, update the person outline at least 4 times a second. */
 const MAX_SEGMENT_INTERVAL_MS = 250;
@@ -67,10 +55,7 @@ export class EffectsProcessor {
   private settings: EffectSettings;
   private readonly onStatus: (status: EffectsStatus) => void;
   private readonly video = document.createElement('video');
-  /** Everything is drawn here first… */
   private readonly out = makeCanvas();
-  /** …then copied here (cropped to the chosen shape); this canvas is what gets sent. */
-  private readonly final = makeCanvas();
   private readonly person = makeCanvas();
   private readonly blurLayer = makeCanvas();
   private readonly softLayer = makeCanvas();
@@ -112,7 +97,7 @@ export class EffectsProcessor {
 
     const { width = 640, height = 480 } = source.getSettings();
     this.resize(width, height);
-    this.track = this.final[0].captureStream(FPS).getVideoTracks()[0];
+    this.track = this.out[0].captureStream(FPS).getVideoTracks()[0];
 
     this.setSettings(settings);
     this.schedule();
@@ -263,19 +248,7 @@ export class EffectsProcessor {
         ctx.filter = 'none';
       }
     }
-    this.present(W, H);
     if (DEBUG) this.logStats(t1 - t0, t2 - t1, performance.now() - t2);
-  }
-
-  /** Copies the finished frame to the canvas being sent, cut to the chosen shape. */
-  private present(W: number, H: number) {
-    const { sx, sy, sw, sh } = cropFor(this.settings.shape, W, H);
-    const [final, f] = this.final;
-    if (final.width !== sw || final.height !== sh) {
-      final.width = sw;
-      final.height = sh;
-    }
-    f.drawImage(this.out[0], sx, sy, sw, sh, 0, 0, sw, sh);
   }
 
   /** Finds faces and redraws the skin mask, as often as this device comfortably can. */

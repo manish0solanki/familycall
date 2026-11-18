@@ -18,7 +18,7 @@
     "test:calls": "node tests/direct-calls.cjs",
     "test:reset": "node tests/password-reset.cjs",
     "test:fit": "node tests/video-fit.cjs",
-    "test:shape": "node tests/video-shape.cjs"
+    "test:view": "node tests/video-view.cjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35",
