@@ -317,6 +317,7 @@ a:hover { color: var(--accent-hover); }
   right: 16px;
   top: max(96px, calc(env(safe-area-inset-top) + 76px));
   width: 108px;
+  max-height: 40vh;
   aspect-ratio: 3 / 4;
   border-radius: 16px;
   overflow: hidden;
@@ -563,3 +564,16 @@ a:hover { color: var(--accent-hover); }
 .ringtone__icon { width: 20px; text-align: center; }
 
 .call__debug { margin-top: 6px; font-size: 12px; font-weight: 700; color: #fde68a; text-shadow: 0 1px 2px #000; }
+
+/* Phone turned sideways: a short screen, so smaller controls and preview. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .call__top { padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-left)) 20px; }
+  .call__title { font-size: 18px; }
+  .call__subtitle { font-size: 13px; }
+  .call__pills { margin-top: 6px; }
+  .call__fit-btn { min-height: 34px; padding: 0 10px; font-size: 13px; }
+  .call__self { top: 12px; right: max(12px, env(safe-area-inset-right)); width: auto; height: 34vh; max-width: 30vw; }
+  .call__controls { bottom: max(10px, env(safe-area-inset-bottom)); padding: 8px; gap: 6px; max-width: 340px; border-radius: 22px; }
+  .call__controls .round-btn { width: 46px; height: 46px; }
+  .call__controls .round-btn--danger { width: 56px; }
+}

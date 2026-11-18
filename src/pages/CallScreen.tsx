@@ -215,6 +215,8 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
   const [remoteSize, setRemoteSize] = useState<{ w: number; h: number } | null>(null);
   const [screen, setScreen] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [fitChoice, setFitChoice] = useState<'cover' | 'contain' | null>(null);
+  /** My own video's shape, so the "You" preview matches it (tall when upright, wide when sideways). */
+  const [selfSize, setSelfSize] = useState<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const onResize = () => setScreen({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', onResize);
@@ -367,8 +369,18 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
       </header>
 
       {hasRemote && (
-        <div className={`call__self${media.camOn ? '' : ' is-off'}`}>
-          <VideoView stream={media.previewStream} muted mirrored={media.facing === 'user'} className="call__self-video" label="Your camera" />
+        <div
+          className={`call__self${media.camOn ? '' : ' is-off'}`}
+          style={selfSize ? { aspectRatio: `${selfSize.w} / ${selfSize.h}` } : undefined}
+        >
+          <VideoView
+            stream={media.previewStream}
+            muted
+            mirrored={media.facing === 'user'}
+            className="call__self-video"
+            label="Your camera"
+            onSize={(w, h) => setSelfSize((s) => (s?.w === w && s?.h === h ? s : { w, h }))}
+          />
           {!media.camOn && <span className="call__self-off"><Icon name="videoOff" size={22} /></span>}
           <span className="call__self-label">You</span>
         </div>
