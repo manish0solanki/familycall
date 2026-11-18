@@ -24,9 +24,12 @@ export function VideoView({ stream, muted = false, mirrored = false, className, 
     const report = () => el.videoWidth && onSizeRef.current?.(el.videoWidth, el.videoHeight);
     el.addEventListener('loadedmetadata', report);
     el.addEventListener('resize', report);
+    // Some phones and tablets don't fire "resize" when the sender rotates; check every second too.
+    const timer = onSizeRef.current ? setInterval(report, 1000) : null;
     return () => {
       el.removeEventListener('loadedmetadata', report);
       el.removeEventListener('resize', report);
+      if (timer) clearInterval(timer);
     };
   }, []);
 

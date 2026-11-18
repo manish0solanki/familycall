@@ -188,7 +188,7 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
   const shape = remoteSize ? (remoteSize.w >= remoteSize.h ? 'wide' : 'tall') : null;
   useEffect(() => setFitChoice(null), [shape]);
   const autoFit: 'cover' | 'contain' = (() => {
-    if (!remoteSize) return 'cover';
+    if (!remoteSize) return 'contain'; // until we know the shape, never risk a zoomed-in crop
     const video = remoteSize.w / remoteSize.h;
     const box = screen.w / screen.h;
     const kept = Math.min(video, box) / Math.max(video, box); // share of the picture left after cropping
@@ -226,6 +226,10 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
     <main className="call" data-status={call.status}>
       {hasRemote ? (
         <>
+          {remoteFit === 'contain' && (
+            // Fills the empty sides with a soft, blurred copy of the video (like WhatsApp / FaceTime).
+            <VideoView stream={call.remoteStream} muted className="call__backdrop" label="" />
+          )}
           <VideoView
             stream={call.remoteStream}
             className="call__remote"
@@ -307,6 +311,18 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
         <div>
           <h1 className="call__title">{title}</h1>
           <p className="call__subtitle" role="status" data-testid="call-status">{subtitle}</p>
+          {hasRemote && (
+            <button
+              type="button"
+              className="call__fit-btn"
+              onClick={() => setFitChoice(remoteFit === 'cover' ? 'contain' : 'cover')}
+              aria-pressed={remoteFit === 'cover'}
+              data-testid="fit-button"
+            >
+              <Icon name={remoteFit === 'cover' ? 'shrink' : 'expand'} size={18} />
+              {remoteFit === 'cover' ? 'Fit' : 'Fill'}
+            </button>
+          )}
         </div>
       </header>
 
