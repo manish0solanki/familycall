@@ -4,20 +4,18 @@ import { loadEffects, needsProcessing, saveEffects, type EffectSettings } from '
 
 type Facing = 'user' | 'environment';
 
-const isPhone = () =>
-  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const isPortrait = () => window.matchMedia('(orientation: portrait)').matches;
-
 /**
- * Capture in the shape the phone is held: a phone held upright sends a tall (9:16)
- * picture, so the other phone can show it full screen without cropping (a wide picture
- * cropped to a tall screen looks zoomed in and blurry). Computers send 16:9.
+ * Ask every camera for its normal 1280×720 picture and never let the browser crop or
+ * rescale it (`resizeMode: 'none'`). Phones then rotate the full, uncropped picture to
+ * match how they're held (upright → 720×1280).
+ *
+ * (Asking a phone for a tall 720×1280 shape directly made Android Chrome crop its wide
+ * sensor frame *before* rotating, which sent a small, zoomed-in strip.)
  */
 function videoConstraints(): MediaTrackConstraints {
-  return isPhone() && isPortrait()
-    ? { width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } }
-    : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
+  return { width: { ideal: 1280 }, height: { ideal: 720 }, resizeMode: 'none' } as MediaTrackConstraints;
 }
+
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
 function describeMediaError(err: unknown): string {
@@ -100,18 +98,6 @@ export function useLocalMedia() {
       outRef.current = null;
     };
   }, []);
-
-  // Phone rotated: switch the camera between tall and wide pictures to match.
-  useEffect(() => {
-    if (!stream || !isPhone()) return;
-    const query = window.matchMedia('(orientation: portrait)');
-    const onChange = () => {
-      const track = rawRef.current?.getVideoTracks()[0];
-      track?.applyConstraints(videoConstraints()).catch((err) => console.warn('[media] could not re-orient camera', err));
-    };
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, [stream]);
 
   // Start, update or stop the effects processor when the settings change.
   useEffect(() => {

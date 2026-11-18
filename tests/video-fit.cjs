@@ -1,5 +1,6 @@
-// Video shape and fit: phones held upright send tall video; the receiver fills the screen
-// when shapes match and shows the whole picture when they don't (tap toggles).
+// Video fit: the receiver fills the screen when shapes match and shows the whole picture
+// when they don't (tap / Fit button toggles). Note: Chrome's fake camera can't rotate like a
+// real phone, so emulated phones send their uncropped 1280×720 frame.
 const { chromium, devices } = require('playwright');
 const path = require('path');
 const fs = require('fs');
@@ -38,12 +39,12 @@ const hasVideo = (p) => p.waitForFunction(() => document.querySelector('video.ca
   let room = `fit-${Date.now().toString(36)}`;
   const a = await person('Mom', room, 'Pixel 7');
   await a.page.getByTestId('call-status').waitFor();
-  console.log('phone camera while waiting (upright):', await sent(a.page));
+  console.log('phone camera while waiting (uncropped camera size; real phones rotate it upright):', await sent(a.page));
   const b = await person('Nani', room, 'Pixel 7');
   await Promise.all([connected(a.page), connected(b.page)]);
   await hasVideo(b.page);
   await b.page.waitForTimeout(2500);
-  console.log('1. phone→phone: Nani receives', JSON.stringify(await received(b.page)), '(expect tall video, cover)');
+  console.log('1. phone→phone: Nani receives', JSON.stringify(await received(b.page)), '(fit follows shape: tall → cover on a phone, wide → contain)');
   await b.page.screenshot({ path: path.join(OUT, 'fit-phone-phone.png') });
   await a.b.close();
   await b.b.close();
@@ -62,7 +63,7 @@ const hasVideo = (p) => p.waitForFunction(() => document.querySelector('video.ca
   console.log('   after tap:', JSON.stringify(await received(d.page)));
   await d.page.getByTestId('fit-toggle').click();
   console.log('   tap again:', JSON.stringify(await received(d.page)));
-  console.log('   computer receives phone video:', JSON.stringify(await received(c.page)), '(expect tall video, contain on wide screen)');
+  console.log('   computer receives phone video:', JSON.stringify(await received(c.page)), '(fit follows shape)');
   await c.b.close();
   await d.b.close();
 })().catch((e) => { console.error('FAILED', e); process.exit(1); });

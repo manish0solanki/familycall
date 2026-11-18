@@ -47,6 +47,27 @@ function formatDuration(totalSeconds: number): string {
 const testMode =
   signalingMode === 'local' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
 
+/** Add ?debug to the room link to show the video sizes being sent and received. */
+const DEBUG_VIDEO = new URLSearchParams(window.location.search).has('debug');
+
+function VideoSizes({ local, remote }: { local: MediaStream | null; remote: { w: number; h: number } | null }) {
+  const [sent, setSent] = useState('');
+  useEffect(() => {
+    const read = () => {
+      const s = local?.getVideoTracks()[0]?.getSettings();
+      setSent(s?.width ? `${s.width}×${s.height}` : '?');
+    };
+    read();
+    const timer = setInterval(read, 1000);
+    return () => clearInterval(timer);
+  }, [local]);
+  return (
+    <p className="call__debug" data-testid="video-sizes">
+      Sending {sent} · Receiving {remote ? `${remote.w}×${remote.h}` : '?'} · Screen {window.innerWidth}×{window.innerHeight}
+    </p>
+  );
+}
+
 const STATUS_TEXT: Record<CallState['status'], string> = {
   joining: 'Joining…',
   waiting: 'Waiting for family to join',
@@ -311,6 +332,7 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
         <div>
           <h1 className="call__title">{title}</h1>
           <p className="call__subtitle" role="status" data-testid="call-status">{subtitle}</p>
+          {DEBUG_VIDEO && hasRemote && <VideoSizes local={media.previewStream} remote={remoteSize} />}
           {hasRemote && (
             <button
               type="button"
