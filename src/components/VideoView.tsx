@@ -6,11 +6,29 @@ interface Props {
   mirrored?: boolean;
   className?: string;
   label: string;
+  /** How the picture fills its box: crop to fill ('cover') or show it whole ('contain'). */
+  fit?: 'cover' | 'contain';
+  /** Called with the video's size whenever it changes (e.g. the sender rotates their phone). */
+  onSize?: (width: number, height: number) => void;
 }
 
 /** A <video> bound to a MediaStream. */
-export function VideoView({ stream, muted = false, mirrored = false, className, label }: Props) {
+export function VideoView({ stream, muted = false, mirrored = false, className, label, fit, onSize }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
+  const onSizeRef = useRef(onSize);
+  onSizeRef.current = onSize;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const report = () => el.videoWidth && onSizeRef.current?.(el.videoWidth, el.videoHeight);
+    el.addEventListener('loadedmetadata', report);
+    el.addEventListener('resize', report);
+    return () => {
+      el.removeEventListener('loadedmetadata', report);
+      el.removeEventListener('resize', report);
+    };
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -26,6 +44,7 @@ export function VideoView({ stream, muted = false, mirrored = false, className, 
       autoPlay
       playsInline
       muted={muted}
+      style={fit ? { objectFit: fit } : undefined}
       aria-label={label}
     />
   );

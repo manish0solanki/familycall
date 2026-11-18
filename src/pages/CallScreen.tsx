@@ -172,6 +172,30 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
 
   const [showEffects, setShowEffects] = useState(false);
 
+  // ---- Fit or fill the other person's video. ----
+  // Filling the screen crops the picture. That's fine when the shapes match, but a wide
+  // picture on a tall phone screen would lose half the image and look zoomed in and
+  // blurry, so then we show it whole. Tapping the video switches between the two.
+  const [remoteSize, setRemoteSize] = useState<{ w: number; h: number } | null>(null);
+  const [screen, setScreen] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [fitChoice, setFitChoice] = useState<'cover' | 'contain' | null>(null);
+  useEffect(() => {
+    const onResize = () => setScreen({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  // A new shape from the other side (they rotated their phone): go back to automatic.
+  const shape = remoteSize ? (remoteSize.w >= remoteSize.h ? 'wide' : 'tall') : null;
+  useEffect(() => setFitChoice(null), [shape]);
+  const autoFit: 'cover' | 'contain' = (() => {
+    if (!remoteSize) return 'cover';
+    const video = remoteSize.w / remoteSize.h;
+    const box = screen.w / screen.h;
+    const kept = Math.min(video, box) / Math.max(video, box); // share of the picture left after cropping
+    return kept < 0.75 ? 'contain' : 'cover';
+  })();
+  const remoteFit = fitChoice ?? autoFit;
+
   const hasRemote = Boolean(call.remoteStream) && call.status !== 'waiting';
   const otherName = outgoingTo?.displayName ?? call.remoteName;
   const title = call.remoteName ?? otherName ?? 'Your call';
@@ -201,7 +225,23 @@ export function CallScreen({ roomId, name, media, direct, onLeave }: Props) {
   return (
     <main className="call" data-status={call.status}>
       {hasRemote ? (
-        <VideoView stream={call.remoteStream} className="call__remote" label={`${title}'s video`} />
+        <>
+          <VideoView
+            stream={call.remoteStream}
+            className="call__remote"
+            label={`${title}'s video`}
+            fit={remoteFit}
+            onSize={(w, h) => setRemoteSize((s) => (s?.w === w && s?.h === h ? s : { w, h }))}
+          />
+          <button
+            type="button"
+            className="call__fit-toggle"
+            onClick={() => setFitChoice(remoteFit === 'cover' ? 'contain' : 'cover')}
+            aria-label={remoteFit === 'cover' ? 'Show the whole picture' : 'Fill the screen'}
+            data-testid="fit-toggle"
+            data-fit={remoteFit}
+          />
+        </>
       ) : (
         <div className="call__empty">
           {call.status === 'full' ? (

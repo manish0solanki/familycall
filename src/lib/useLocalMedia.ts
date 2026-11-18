@@ -4,7 +4,20 @@ import { loadEffects, needsProcessing, saveEffects, type EffectSettings } from '
 
 type Facing = 'user' | 'environment';
 
-const VIDEO: MediaTrackConstraints = { width: { ideal: 1280 }, height: { ideal: 720 } };
+const isPhone = () =>
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isPortrait = () => window.matchMedia('(orientation: portrait)').matches;
+
+/**
+ * Capture in the shape the phone is held: a phone held upright sends a tall (9:16)
+ * picture, so the other phone can show it full screen without cropping (a wide picture
+ * cropped to a tall screen looks zoomed in and blurry). Computers send 16:9.
+ */
+function videoConstraints(): MediaTrackConstraints {
+  return isPhone() && isPortrait()
+    ? { width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } }
+    : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 16 / 9 } };
+}
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
 function describeMediaError(err: unknown): string {
@@ -62,7 +75,7 @@ export function useLocalMedia() {
     }
     let cancelled = false;
     navigator.mediaDevices
-      .getUserMedia({ video: { ...VIDEO, facingMode: 'user' }, audio: AUDIO })
+      .getUserMedia({ video: { ...videoConstraints(), facingMode: 'user' }, audio: AUDIO })
       .then(async (raw) => {
         if (cancelled) {
           raw.getTracks().forEach((t) => t.stop());
@@ -87,6 +100,18 @@ export function useLocalMedia() {
       outRef.current = null;
     };
   }, []);
+
+  // Phone rotated: switch the camera between tall and wide pictures to match.
+  useEffect(() => {
+    if (!stream || !isPhone()) return;
+    const query = window.matchMedia('(orientation: portrait)');
+    const onChange = () => {
+      const track = rawRef.current?.getVideoTracks()[0];
+      track?.applyConstraints(videoConstraints()).catch((err) => console.warn('[media] could not re-orient camera', err));
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [stream]);
 
   // Start, update or stop the effects processor when the settings change.
   useEffect(() => {
@@ -141,13 +166,13 @@ export function useLocalMedia() {
     old?.stop();
     let track: MediaStreamTrack;
     try {
-      const fresh = await navigator.mediaDevices.getUserMedia({ video: { ...VIDEO, facingMode: { ideal: next } } });
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: { ...videoConstraints(), facingMode: { ideal: next } } });
       track = fresh.getVideoTracks()[0];
       setFacing(next);
     } catch (err) {
       console.error('[media] could not switch camera', err);
       // Get the previous camera back.
-      const fallback = await navigator.mediaDevices.getUserMedia({ video: { ...VIDEO, facingMode: { ideal: facing } } });
+      const fallback = await navigator.mediaDevices.getUserMedia({ video: { ...videoConstraints(), facingMode: { ideal: facing } } });
       track = fallback.getVideoTracks()[0];
     }
     track.enabled = camOnRef.current;

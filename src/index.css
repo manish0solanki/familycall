@@ -242,6 +242,11 @@ a:hover { color: var(--accent-hover); }
   color: #fff;
   overflow: hidden;
 }
+.call__fit-toggle {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border: none; padding: 0; background: transparent; cursor: zoom-in;
+}
+.call__fit-toggle[data-fit='contain'] { cursor: zoom-out; }
 .call__remote {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
@@ -324,7 +329,6 @@ a:hover { color: var(--accent-hover); }
 }
 
 @media (min-width: 900px) {
-  .call__remote { object-fit: contain; }
   .call__self { width: 240px; aspect-ratio: 16 / 10; top: 24px; right: 24px; }
   .call__top { padding: 24px 28px 40px; }
 }

@@ -282,6 +282,7 @@ export class PeerCall {
         case 'connected':
           this.clearRecoveryTimer();
           this.update({ status: 'connected' });
+          void this.allowSharperVideo(pc);
           break;
         case 'disconnected':
           this.update({ status: 'reconnecting' });
@@ -343,6 +344,24 @@ export class PeerCall {
       await this.pc?.addIceCandidate(candidate);
     } catch (err) {
       if (!this.ignoreOffer) console.warn('[call] could not add ICE candidate', err);
+    }
+  }
+
+  /**
+   * Let the camera use up to 2.5 Mbps (browsers often start far lower and adapt up),
+   * so faces stay sharp when the connection allows it. Bad networks still adapt down.
+   */
+  private async allowSharperVideo(pc: RTCPeerConnection) {
+    const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+    if (!sender) return;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings?.length) return;
+      params.encodings[0].maxBitrate = 2_500_000;
+      params.encodings[0].maxFramerate = 30;
+      await sender.setParameters(params);
+    } catch (err) {
+      console.warn('[call] could not raise video bitrate', err);
     }
   }
 
